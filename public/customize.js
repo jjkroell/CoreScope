@@ -628,8 +628,8 @@
       { id: 'theme', label: '🎨', title: 'Theme Colors' },
       { id: 'nodes', label: '🎯', title: 'Colors' },
       { id: 'home', label: '🏠', title: 'Home Page' },
-      { id: 'export', label: '📤', title: 'Export / Save' },
-      { id: 'audio-lab', label: '🎵', title: 'Audio Lab' }
+      { id: 'audio-lab', label: '🎵', title: 'Audio Lab' },
+      { id: 'export', label: '📤', title: 'Export / Save' }
     ];
     return '<div class="cust-tabs">' +
       tabs.map(function (t) {
