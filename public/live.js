@@ -6,6 +6,7 @@
   function statusGreen() { return cssVar('--status-green') || '#22c55e'; }
 
   let map, ws, nodesLayer, pathsLayer, animLayer, heatLayer;
+  let liveBoundary = null; // [[lat,lon],...] loaded from config
   let nodeMarkers = {};
   let nodeData = {};
   let packetCount = 0;
@@ -718,11 +719,12 @@
     pathsLayer = L.layerGroup().addTo(map);
     animLayer = L.layerGroup().addTo(map);
 
-    // Draw boundary polygon from config
+    // Draw boundary polygon from config and store for filtering
     try {
       const bCfg = await (await fetch('/api/config/boundary')).json();
       if (bCfg && Array.isArray(bCfg.coords) && bCfg.coords.length >= 3) {
-        L.polygon(bCfg.coords, {
+        liveBoundary = bCfg.coords;
+        L.polygon(liveBoundary, {
           color: '#f59e0b', weight: 2, opacity: 0.9,
           fillColor: '#f59e0b', fillOpacity: 0.06, dashArray: '6,4',
           interactive: false,
@@ -1266,7 +1268,7 @@
       const nodes = await resp.json();
       const list = Array.isArray(nodes) ? nodes : (nodes.nodes || []);
       list.forEach(n => {
-        if (n.lat != null && n.lon != null && !(n.lat === 0 && n.lon === 0)) {
+        if (n.lat != null && n.lon != null && !(n.lat === 0 && n.lon === 0) && isInBoundary(n.lat, n.lon)) {
           nodeData[n.public_key] = n;
           addNodeMarker(n);
         }
@@ -1335,6 +1337,7 @@
       if (count >= 25) break;
       const pkt = entry.pkt;
       if (showOnlyFavorites && !packetInvolvesFavorite(pkt)) continue;
+      if (!packetInBoundary(pkt)) continue;
       const decoded = pkt.decoded || {};
       const header = decoded.header || {};
       const payload = decoded.payload || {};
@@ -1420,6 +1423,51 @@
     } catch {}
   }
 
+  function isPointInPolygon(lat, lon, coords) {
+    let inside = false;
+    const n = coords.length;
+    for (let i = 0, j = n - 1; i < n; j = i++) {
+      const yi = coords[i][0], xi = coords[i][1];
+      const yj = coords[j][0], xj = coords[j][1];
+      if ((yi > lat) !== (yj > lat) && lon < (xj - xi) * (lat - yi) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  }
+
+  function isInBoundary(lat, lon) {
+    if (!liveBoundary) return true;
+    if (lat == null || lon == null || (lat === 0 && lon === 0)) return false;
+    return isPointInPolygon(lat, lon, liveBoundary);
+  }
+
+  // Returns true if the packet involves at least one node inside the boundary.
+  // If no positions are resolvable, lets the packet through (can't filter unknown).
+  function packetInBoundary(pkt) {
+    if (!liveBoundary) return true;
+    const payload = pkt.decoded?.payload || {};
+    const hops = pkt.decoded?.path?.hops || [];
+
+    // ADVERT lat/lon
+    if (payload.lat != null && !(payload.lat === 0 && payload.lon === 0)) {
+      return isInBoundary(payload.lat, payload.lon);
+    }
+
+    // Resolve hops through nodeData
+    let anyResolved = false;
+    for (const hop of hops) {
+      const hopLower = hop.toLowerCase();
+      const node = Object.values(nodeData).find(n =>
+        n.public_key.toLowerCase().startsWith(hopLower) && n.lat != null && n.lon != null && !(n.lat === 0 && n.lon === 0)
+      );
+      if (node) {
+        anyResolved = true;
+        if (isInBoundary(node.lat, node.lon)) return true;
+      }
+    }
+    // Unknown positions — let through
+    return !anyResolved;
+  }
+
   function connectWS() {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     ws = new WebSocket(`${proto}://${location.host}`);
@@ -1460,10 +1508,13 @@
     // Favorites filter: skip animation if packet doesn't involve a favorited node
     if (showOnlyFavorites && !packetInvolvesFavorite(pkt)) return;
 
-    // If ADVERT, ensure node appears on map
+    // Boundary filter: skip if packet doesn't involve any node inside boundary
+    if (!packetInBoundary(pkt)) return;
+
+    // If ADVERT, ensure node appears on map (only if inside boundary)
     if (typeName === 'ADVERT' && payload.pubKey) {
       const key = payload.pubKey;
-      if (!nodeMarkers[key] && payload.lat != null && payload.lon != null && !(payload.lat === 0 && payload.lon === 0)) {
+      if (!nodeMarkers[key] && payload.lat != null && payload.lon != null && !(payload.lat === 0 && payload.lon === 0) && isInBoundary(payload.lat, payload.lon)) {
         const n = { public_key: key, name: payload.name || key.slice(0,8), role: payload.role || 'unknown', lat: payload.lat, lon: payload.lon };
         nodeData[key] = n;
         addNodeMarker(n);
@@ -1494,6 +1545,9 @@
     // Favorites filter: skip if none of the packets involve a favorite
     if (showOnlyFavorites && !packets.some(p => packetInvolvesFavorite(p))) return;
 
+    // Boundary filter: skip if none of the packets involve a node inside boundary
+    if (!packets.some(p => packetInBoundary(p))) return;
+
     const consolidated = Object.assign({}, first, { observation_count: packets.length });
     if (window.MeshAudio) MeshAudio.sonifyPacket(consolidated);
     // Add single consolidated feed item for the group
@@ -1509,7 +1563,7 @@
       const p = d.payload || {};
       if (h.payloadTypeName === 'ADVERT' && p.pubKey) {
         const key = p.pubKey;
-        if (!nodeMarkers[key] && p.lat != null && p.lon != null && !(p.lat === 0 && p.lon === 0)) {
+        if (!nodeMarkers[key] && p.lat != null && p.lon != null && !(p.lat === 0 && p.lon === 0) && isInBoundary(p.lat, p.lon)) {
           const n = { public_key: key, name: p.name || key.slice(0,8), role: p.role || 'unknown', lat: p.lat, lon: p.lon };
           nodeData[key] = n;
           addNodeMarker(n);
