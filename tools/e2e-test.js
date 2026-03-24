@@ -8,12 +8,13 @@
  * validates every API endpoint, WebSocket broadcasts, and optionally MQTT.
  */
 
-const { spawn, execSync } = require('child_process');
+const { spawn, execSync, spawnSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
 const WebSocket = require('ws');
+const { computeContentHash } = require('../server-helpers');
 
 const PROJECT_DIR = path.join(__dirname, '..');
 const PORT = 13579; // avoid conflict with dev server
@@ -127,13 +128,26 @@ async function main() {
   // 1. Create temp DB
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'meshcore-e2e-'));
   const dbPath = path.join(tmpDir, 'test.db');
+  const configPath = path.join(tmpDir, 'config.json');
+  fs.writeFileSync(configPath, JSON.stringify({
+    port: PORT,
+    mqtt: { broker: 'mqtt://localhost:1883', topic: 'meshcore/+/+/packets' },
+  }));
   console.log(`Temp DB: ${dbPath}`);
 
-  // 2. Start server
+  // 2. Kill any stale server on our port (from previous crashed test runs)
+  try {
+    const r = spawnSync('lsof', ['-ti', `:${PORT}`], { encoding: 'utf8' });
+    const pids = r.stdout.trim().split('\n').filter(Boolean);
+    for (const pid of pids) { try { process.kill(Number(pid), 'SIGTERM'); } catch {} }
+    if (pids.length) await sleep(500);
+  } catch {}
+
+  // 3. Start server
   console.log('Starting server...');
   const srv = spawn('node', ['server.js'], {
     cwd: PROJECT_DIR,
-    env: { ...process.env, DB_PATH: dbPath, PORT: String(PORT) },
+    env: { ...process.env, DB_PATH: dbPath, PORT: String(PORT), CONFIG_PATH: configPath },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
@@ -375,7 +389,7 @@ async function main() {
   if (chList.length > 0) {
     const someCh = chList[0];
     assert(someCh.messageCount > 0, `channel has messages (${someCh.messageCount})`);
-    const msgResp = (await get(`/api/channels/${someCh.hash}/messages`)).data;
+    const msgResp = (await get(`/api/channels/${encodeURIComponent(someCh.hash)}/messages`)).data;
     assert(msgResp.messages.length > 0, 'channel has message list');
     assert(msgResp.messages[0].sender !== undefined, 'message has sender');
     console.log(`  ✓ Channels: ${chList.length} channels\n`);
@@ -438,9 +452,9 @@ async function main() {
         setTimeout(() => reject(new Error('timeout')), 2000);
       });
       const mqttHex = buildAdvert('MQTTTestNode', 'repeater').toString('hex').toUpperCase();
-      const mqttHash = 'mqtt-test-hash-001';
+      const mqttHash = computeContentHash(mqttHex);
       mc.publish('meshcore/SJC/MQTT-OBS-1/packets', JSON.stringify({
-        raw: mqttHex, SNR: 8.0, RSSI: -75, hash: mqttHash,
+        raw: mqttHex, SNR: 8.0, RSSI: -75,
       }));
       await sleep(1000);
       mc.end();

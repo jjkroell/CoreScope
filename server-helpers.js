@@ -11,7 +11,9 @@ const CONFIG_PATHS = [
 ];
 
 function loadConfigFile(configPaths) {
-  const paths = configPaths || CONFIG_PATHS;
+  const paths = process.env.CONFIG_PATH
+    ? [process.env.CONFIG_PATH]
+    : (configPaths || CONFIG_PATHS);
   for (const p of paths) {
     try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch {}
   }
