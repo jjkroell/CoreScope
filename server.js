@@ -307,7 +307,8 @@ app.get('/api/config/regions', (req, res) => {
   // Merge config regions with any IATA codes seen from observers
   const regions = { ...(config.regions || {}) };
   try {
-    const rows = db.db.prepare("SELECT DISTINCT iata FROM observers WHERE iata IS NOT NULL").all();
+    const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const rows = db.db.prepare("SELECT DISTINCT iata FROM observers WHERE iata IS NOT NULL AND last_seen >= ?").all(cutoff);
     for (const r of rows) {
       if (r.iata && !regions[r.iata]) regions[r.iata] = r.iata; // fallback to code itself
     }
