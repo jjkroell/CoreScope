@@ -33,6 +33,61 @@ When displaying a packet's path (e.g., `A3 → 7F → B1`), the system must figu
 - **Regional filtering is server-only** — The `/api/resolve-hops` endpoint has observer-based fallback filtering (for GPS-less nodes seen by regional observers). The client-side `HopResolver` only does geographic regional filtering.
 - **Stale prefix index** — The server caches the prefix index on the `allNodes` array object. It's cleared on node upsert but could theoretically serve stale data briefly.
 
+### How the Two-Pass Algorithm Works
+
+A packet path arrives as truncated hex prefixes. Some resolve to one node (unique), some match multiple (ambiguous). Two passes guarantee every hop gets resolved:
+
+```mermaid
+flowchart LR
+    subgraph raw["① Candidate Lookup"]
+        direction LR
+        r1(("A3<br>3 matches")):::ambig
+        r2(("7F<br>1 match")):::known
+        r3(("B1<br>2 matches")):::ambig
+        r4(("E4<br>1 match")):::known
+        r5(("A3<br>4 matches")):::ambig
+    end
+    r1---r2---r3---r4---r5
+
+    classDef known fill:#166534,color:#fff,stroke:#22c55e
+    classDef ambig fill:#991b1b,color:#fff,stroke:#ef4444
+```
+
+```mermaid
+flowchart LR
+    subgraph fwd["② Forward Pass →  pick nearest to previous resolved hop"]
+        direction LR
+        f1(("A3<br>skip ❌")):::ambig
+        f2(("7F<br>anchor")):::known
+        f3(("B1→✅<br>nearest 7F")):::resolved
+        f4(("E4<br>anchor")):::known
+        f5(("A3→✅<br>nearest E4")):::resolved
+    end
+    f1-- "→" ---f2-- "→" ---f3-- "→" ---f4-- "→" ---f5
+
+    classDef known fill:#166534,color:#fff,stroke:#22c55e
+    classDef ambig fill:#991b1b,color:#fff,stroke:#ef4444
+    classDef resolved fill:#1e40af,color:#fff,stroke:#3b82f6
+```
+
+```mermaid
+flowchart RL
+    subgraph bwd["③ Backward Pass ←  catch hops the forward pass missed"]
+        direction RL
+        b5(("A3 ✅")):::known
+        b4(("E4 ✅")):::known
+        b3(("B1 ✅")):::known
+        b2(("7F<br>anchor")):::known
+        b1(("A3→✅<br>nearest 7F")):::resolved
+    end
+    b5-- "←" ---b4-- "←" ---b3-- "←" ---b2-- "←" ---b1
+
+    classDef known fill:#166534,color:#fff,stroke:#22c55e
+    classDef resolved fill:#1e40af,color:#fff,stroke:#3b82f6
+```
+
+**Forward** resolves hops that have a known node to their left. **Backward** catches the ones at the start of the path that had no left anchor. After both passes, every hop either resolved to a specific node or has no candidates at all.
+
 ---
 
 ## Section 2: Technical Details
@@ -86,61 +141,6 @@ The primary workhorse. Used by most API endpoints. Algorithm:
 4. **Backward pass**: Walk right→left, same logic with next known position.
 
 5. **Sanity check**: Mark hops as `unreliable` if they're >MAX_HOP_DIST (default 1.8° ≈ 200 km) from both neighbors. Clear their lat/lon.
-
-#### Visual: Forward + Backward Pass
-
-```mermaid
-graph LR
-    subgraph "Raw path (after candidate lookup)"
-        A["?A<br/>ambiguous<br/>3 candidates"]
-        B["?B<br/>ambiguous<br/>2 candidates"]
-        C["C ✅<br/>known<br/>San Jose"]
-        D["?D<br/>ambiguous<br/>4 candidates"]
-        E["E ✅<br/>known<br/>Oakland"]
-    end
-
-    A --> B --> C --> D --> E
-```
-
-```mermaid
-graph LR
-    subgraph "Forward pass →"
-        A1["?A<br/>⏭ skip<br/>(no anchor)"]
-        B1["?B<br/>⏭ skip<br/>(no anchor)"]
-        C1["C ✅<br/>anchor set"]
-        D1["?D → D ✅<br/>pick nearest to C"]
-        E1["E ✅<br/>anchor set"]
-    end
-
-    A1 -->|"→"| B1 -->|"→"| C1 -->|"→"| D1 -->|"→"| E1
-
-    style C1 fill:#166534,color:#fff
-    style D1 fill:#166534,color:#fff
-    style E1 fill:#166534,color:#fff
-    style A1 fill:#991b1b,color:#fff
-    style B1 fill:#991b1b,color:#fff
-```
-
-```mermaid
-graph RL
-    subgraph "Backward pass ←"
-        E2["E ✅<br/>anchor set"]
-        D2["D ✅<br/>already resolved"]
-        C2["C ✅<br/>anchor set"]
-        B2["?B → B ✅<br/>pick nearest to C"]
-        A2["?A → A ✅<br/>pick nearest to B"]
-    end
-
-    E2 -->|"←"| D2 -->|"←"| C2 -->|"←"| B2 -->|"←"| A2
-
-    style A2 fill:#166534,color:#fff
-    style B2 fill:#166534,color:#fff
-    style C2 fill:#166534,color:#fff
-    style D2 fill:#166534,color:#fff
-    style E2 fill:#166534,color:#fff
-```
-
-**Why two passes?** The forward pass can't resolve hops at the *start* of the path because there's no preceding anchor. The backward pass catches these by anchoring from the right. Together, every ambiguous hop is guaranteed at least one resolved neighbor to measure distance against.
 
 **Callsites** (all in `server.js`):
 | Line | Context |
