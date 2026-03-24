@@ -628,7 +628,8 @@
       { id: 'theme', label: '🎨', title: 'Theme Colors' },
       { id: 'nodes', label: '🎯', title: 'Colors' },
       { id: 'home', label: '🏠', title: 'Home Page' },
-      { id: 'export', label: '📤', title: 'Export / Save' }
+      { id: 'export', label: '📤', title: 'Export / Save' },
+      { id: 'audio-lab', label: '🎵', title: 'Audio Lab' }
     ];
     return '<div class="cust-tabs">' +
       tabs.map(function (t) {
@@ -874,9 +875,6 @@
       '<details style="margin-top:8px"><summary style="font-size:12px;font-weight:600;cursor:pointer;color:var(--text-muted)">Raw JSON</summary>' +
       '<textarea class="cust-export-area" id="custExportJson" style="margin-top:8px">' + esc(json) + '</textarea>' +
       '</details>' +
-      '<hr style="border:none;border-top:1px solid var(--border);margin:16px 0">' +
-      '<p class="cust-section-title">Tools</p>' +
-      '<a href="#/audio-lab" style="display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--accent);text-decoration:none;padding:6px 10px;border:1px solid var(--border);border-radius:6px;" onclick="document.querySelector(\'.cust-overlay\')?.classList.add(\'hidden\')">🎵 Audio Lab</a>' +
     '</div>';
   }
 
@@ -898,6 +896,11 @@
     // Tab switching
     container.querySelectorAll('.cust-tab').forEach(function (btn) {
       btn.addEventListener('click', function () {
+        if (btn.dataset.tab === 'audio-lab') {
+          location.hash = '#/audio-lab';
+          document.querySelector('.cust-overlay')?.classList.add('hidden');
+          return;
+        }
         activeTab = btn.dataset.tab;
         render(container);
       });
