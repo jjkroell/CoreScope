@@ -1107,7 +1107,7 @@
           clearTimeout(_navCleanup.timeout);
           topNav.classList.remove('nav-autohide');
         } else {
-          _navCleanup.timeout = setTimeout(() => { topNav.classList.add('nav-autohide'); }, 4000);
+          _navCleanup.timeout = setTimeout(() => { topNav.classList.add('nav-autohide'); }, 1500);
         }
       });
       topNav.appendChild(pinBtn);
