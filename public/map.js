@@ -244,6 +244,7 @@
     });
 
     // Boundary: load from localStorage (user-drawn) or server config
+    let boundaryFromConfig = false;
     try {
       const saved = localStorage.getItem('meshcore-boundary');
       if (saved) {
@@ -252,10 +253,13 @@
         const bCfg = await (await fetch('/api/config/boundary')).json();
         if (bCfg && Array.isArray(bCfg.coords) && bCfg.coords.length >= 3) {
           boundaryCoords = bCfg.coords;
+          boundaryFromConfig = true;
         }
       }
     } catch {}
-    boundaryEnabled = localStorage.getItem('meshcore-boundary-enabled') === 'true';
+    // Auto-enable filter when boundary comes from config (permanent boundary)
+    const savedEnabled = localStorage.getItem('meshcore-boundary-enabled');
+    boundaryEnabled = savedEnabled !== null ? savedEnabled === 'true' : boundaryFromConfig;
     drawBoundaryLayer();
     updateBoundaryUI();
 

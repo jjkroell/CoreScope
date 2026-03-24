@@ -718,6 +718,18 @@
     pathsLayer = L.layerGroup().addTo(map);
     animLayer = L.layerGroup().addTo(map);
 
+    // Draw boundary polygon from config
+    try {
+      const bCfg = await (await fetch('/api/config/boundary')).json();
+      if (bCfg && Array.isArray(bCfg.coords) && bCfg.coords.length >= 3) {
+        L.polygon(bCfg.coords, {
+          color: '#f59e0b', weight: 2, opacity: 0.9,
+          fillColor: '#f59e0b', fillOpacity: 0.06, dashArray: '6,4',
+          interactive: false,
+        }).addTo(map);
+      }
+    } catch {}
+
     injectSVGFilters();
     await loadNodes();
     showHeatMap();
