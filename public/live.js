@@ -638,7 +638,11 @@
           </div>
         </div>
         <div class="live-overlay live-feed" id="liveFeed">
-          <button class="feed-hide-btn" id="feedHideBtn" title="Hide feed">✕</button>
+          <div class="live-feed-header">
+            <span class="live-feed-title">Incoming Packets</span>
+            <button class="feed-hide-btn" id="feedHideBtn" title="Hide feed">✕</button>
+          </div>
+          <div class="live-feed-body" id="liveFeedBody"></div>
         </div>
         <button class="feed-show-btn hidden" id="feedShowBtn" title="Show feed">📋</button>
         <div class="live-overlay live-node-detail hidden" id="liveNodeDetail">
@@ -1328,8 +1332,9 @@
   function rebuildFeedList() {
     const feed = document.getElementById('liveFeed');
     if (!feed) return;
+    const feedBody = document.getElementById('liveFeedBody') || feed;
     // Remove all feed items but keep the hide button and resize handle
-    feed.querySelectorAll('.live-feed-item').forEach(el => el.remove());
+    feedBody.querySelectorAll('.live-feed-item').forEach(el => el.remove());
     // Re-add from VCR buffer (most recent first, up to 25)
     const entries = VCR.buffer.slice(-100).reverse();
     let count = 0;
@@ -1345,7 +1350,7 @@
       const icon = PAYLOAD_ICONS[typeName] || '📦';
       const hops = decoded.path?.hops || [];
       const color = TYPE_COLORS[typeName] || '#6b7280';
-      addFeedItemDOM(icon, typeName, payload, hops, color, pkt, feed);
+      addFeedItemDOM(icon, typeName, payload, hops, color, pkt, feedBody);
       count++;
     }
   }
@@ -1592,7 +1597,7 @@
     const hops0 = decoded.path?.hops || [];
     const text = payload.text || payload.name || '';
     const preview = text ? ' ' + (text.length > 35 ? text.slice(0, 35) + '…' : text) : '';
-    const feed = document.getElementById('liveFeed');
+    const feed = document.getElementById('liveFeedBody') || document.getElementById('liveFeed');
     if (feed) {
       const item = document.createElement('div');
       item.className = 'live-feed-item live-feed-enter';
@@ -2215,7 +2220,7 @@
   const FEED_DEDUP_WINDOW_MS = 30000; // merge duplicates within 30s
 
   function addFeedItem(icon, typeName, payload, hops, color, pkt) {
-    const feed = document.getElementById('liveFeed');
+    const feed = document.getElementById('liveFeedBody') || document.getElementById('liveFeed');
     if (!feed) return;
 
     // Favorites filter: skip feed item if packet doesn't involve a favorite
