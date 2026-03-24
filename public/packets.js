@@ -6,10 +6,10 @@
   let hashIndex = new Map(); // hash → packet group for O(1) dedup
 
   // Resolve observer_id to friendly name from loaded observers list
-  function obsName(id) {
+  function obsName(id, fallbackName) {
     if (!id) return '—';
     const o = observers.find(ob => ob.id === id);
-    if (!o) return id;
+    if (!o) return fallbackName || id.slice(0, 8) + '…';
     return o.iata ? `${o.name} (${o.iata})` : o.name;
   }
   let selectedId = null;
@@ -1016,7 +1016,7 @@
           <td class="mono col-hash">${truncate(p.hash || '—', 8)}</td>
           <td class="col-size">${groupSize ? groupSize + 'B' : '—'}</td>
           <td class="col-type">${p.payload_type != null ? `<span class="badge badge-${groupTypeClass}">${groupTypeName}</span>` : '—'}</td>
-          <td class="col-observer">${isSingle ? truncate(obsName(headerObserverId), 16) : truncate(obsName(headerObserverId), 10) + (p.observer_count > 1 ? ' +' + (p.observer_count - 1) : '')}</td>
+          <td class="col-observer">${isSingle ? truncate(obsName(headerObserverId, p.observer_name), 16) : truncate(obsName(headerObserverId, p.observer_name), 10) + (p.observer_count > 1 ? ' +' + (p.observer_count - 1) : '')}</td>
           <td class="col-path"><span class="path-hops">${groupPathStr}</span></td>
           <td class="col-rpt">${p.observation_count > 1 ? '<span class="badge badge-obs" title="Seen ' + p.observation_count + ' times">👁 ' + p.observation_count + '</span>' : (isSingle ? '' : p.count)}</td>
           <td class="col-details">${getDetailPreview((() => { try { return JSON.parse(p.decoded_json || '{}'); } catch { return {}; } })())}</td>
@@ -1043,7 +1043,7 @@
               <td class="mono col-hash">${truncate(c.hash || '', 8)}</td>
               <td class="col-size">${size}B</td>
               <td class="col-type"><span class="badge badge-${typeClass}">${typeName}</span></td>
-              <td class="col-observer">${truncate(obsName(c.observer_id), 16)}</td>
+              <td class="col-observer">${truncate(obsName(c.observer_id, c.observer_name), 16)}</td>
               <td class="col-path"><span class="path-hops">${childPathStr}</span></td>
               <td class="col-rpt"></td>
               <td class="col-details">${getDetailPreview((() => { try { return JSON.parse(c.decoded_json); } catch { return {}; } })())}</td>
@@ -1072,7 +1072,7 @@
         <td class="mono col-hash">${truncate(p.hash || String(p.id), 8)}</td>
         <td class="col-size">${size}B</td>
         <td class="col-type"><span class="badge badge-${typeClass}">${typeName}</span></td>
-        <td class="col-observer">${truncate(obsName(p.observer_id), 16)}</td>
+        <td class="col-observer">${truncate(obsName(p.observer_id, p.observer_name), 16)}</td>
         <td class="col-path"><span class="path-hops">${pathStr}</span></td>
         <td class="col-rpt"></td>
         <td class="col-details">${detail}</td>
@@ -1298,7 +1298,7 @@
       <div class="detail-hash">${pkt.hash || 'Packet #' + pkt.id}</div>
       ${messageHtml}
       <dl class="detail-meta">
-        <dt>Observer</dt><dd>${obsName(pkt.observer_id)}</dd>
+        <dt>Observer</dt><dd>${obsName(pkt.observer_id, pkt.observer_name)}</dd>
         <dt>Location</dt><dd>${locationHtml}</dd>
         <dt>SNR / RSSI</dt><dd>${snr != null ? snr + ' dB' : '—'} / ${rssi != null ? rssi + ' dBm' : '—'}</dd>
         <dt>Route Type</dt><dd>${routeTypeName(pkt.route_type)}</dd>
