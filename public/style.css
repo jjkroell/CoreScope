@@ -1457,6 +1457,21 @@ tr[data-hops]:hover { background: rgba(59,130,246,0.1); }
 .node-top-row .node-map-wrap .node-detail-map { height: 100%; }
 .node-top-row .node-qr-wrap { flex: 1; min-width: 120px; max-width: 160px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
 .node-qr-wrap--full { max-width: 240px; margin: 0 auto; }
+/* Node name cell — public key hover tooltip */
+.node-name-cell { position: relative; }
+.node-name-label { cursor: default; }
+.node-pubkey-tip {
+  display: none;
+  position: absolute; left: 0; top: calc(100% + 4px);
+  background: var(--card-bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 5px;
+  padding: 5px 10px; font-size: 11px; white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0,0,0,.35); z-index: 200;
+  pointer-events: none;
+}
+.node-name-label:hover + .node-pubkey-tip,
+.node-name-label:focus + .node-pubkey-tip { display: block; }
+
 .node-stats-table { width: 100%; border-collapse: collapse; font-size: 13px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 12px; }
 .node-stats-table td { padding: 6px 12px; border-bottom: 1px solid var(--border); }
 .node-stats-table tr:last-child td { border-bottom: none; }

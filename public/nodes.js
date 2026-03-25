@@ -542,7 +542,6 @@
           <th class="sortable${sortState.column==='role'?' sort-active':''}" data-sort="role">Role${sortArrow('role')}</th>
           <th class="sortable${sortState.column==='last_seen'?' sort-active':''}" data-sort="last_seen">Last Seen${sortArrow('last_seen')}</th>
           <th class="sortable${sortState.column==='advert_count'?' sort-active':''}" data-sort="advert_count">Adverts${sortArrow('advert_count')}</th>
-          <th class="sortable${sortState.column==='public_key'?' sort-active':''}" data-sort="public_key">Public Key${sortArrow('public_key')}</th>
         </tr></thead>
         <tbody id="nodesBody"></tbody>
       </table>`;
@@ -633,11 +632,10 @@
       const status = getNodeStatus(n.role || 'companion', lastSeenTime ? new Date(lastSeenTime).getTime() : 0);
       const lastSeenClass = status === 'active' ? 'last-seen-active' : 'last-seen-stale';
       return `<tr data-key="${n.public_key}" data-action="select" data-value="${n.public_key}" tabindex="0" role="row" class="${selectedKey === n.public_key ? 'selected' : ''}${isClaimed ? ' claimed-row' : ''}">
-        <td>${favStar(n.public_key, 'node-fav')}${isClaimed ? '<span class="claimed-badge" title="My Mesh">★</span> ' : ''}<strong>${n.name || '(unnamed)'}</strong></td>
+        <td class="node-name-cell">${favStar(n.public_key, 'node-fav')}${isClaimed ? '<span class="claimed-badge" title="My Mesh">★</span> ' : ''}<strong class="node-name-label" data-pubkey="${n.public_key}">${n.name || '(unnamed)'}</strong><span class="node-pubkey-tip mono">${n.public_key}</span></td>
         <td><span class="badge" style="background:${roleColor}20;color:${roleColor}">${n.role}</span></td>
         <td class="${lastSeenClass}">${timeAgo(n.last_heard || n.last_seen)}</td>
         <td>${n.advert_count || 0}</td>
-        <td class="mono">${n.public_key}</td>
       </tr>`;
     }).join('');
     bindFavStars(tbody);
