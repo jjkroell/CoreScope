@@ -6,6 +6,46 @@
   let wsHandler = null;
   let refreshTimer = null;
   let regionChangeHandler = null;
+  let sortCol = 'last_seen';
+  let sortDir = -1; // -1 = desc, 1 = asc
+
+  function toggleSort(col) {
+    if (sortCol === col) { sortDir *= -1; } else { sortCol = col; sortDir = -1; }
+    render();
+  }
+
+  function sortArrow(col) {
+    if (sortCol !== col) return '';
+    return `<span class="sort-arrow">${sortDir === 1 ? '▲' : '▼'}</span>`;
+  }
+
+  function sortedObservers(list) {
+    return [...list].sort((a, b) => {
+      let va, vb;
+      switch (sortCol) {
+        case 'status':
+          va = healthStatus(a.last_seen).cls; vb = healthStatus(b.last_seen).cls; break;
+        case 'name':
+          va = (a.name || a.id || '').toLowerCase(); vb = (b.name || b.id || '').toLowerCase(); break;
+        case 'region':
+          va = a.iata || ''; vb = b.iata || ''; break;
+        case 'last_seen':
+          va = a.last_seen ? new Date(a.last_seen).getTime() : 0;
+          vb = b.last_seen ? new Date(b.last_seen).getTime() : 0; break;
+        case 'packet_count':
+          va = a.packet_count || 0; vb = b.packet_count || 0; break;
+        case 'packets_hr':
+          va = a.packetsLastHour || 0; vb = b.packetsLastHour || 0; break;
+        case 'uptime':
+          va = a.first_seen ? new Date(a.first_seen).getTime() : 0;
+          vb = b.first_seen ? new Date(b.first_seen).getTime() : 0; break;
+        default: return 0;
+      }
+      if (va < vb) return -1 * sortDir;
+      if (va > vb) return 1 * sortDir;
+      return 0;
+    });
+  }
 
   function init(app) {
     app.innerHTML = `
@@ -102,6 +142,8 @@
     const stale = filtered.filter(o => healthStatus(o.last_seen).cls === 'health-yellow').length;
     const offline = filtered.filter(o => healthStatus(o.last_seen).cls === 'health-red').length;
 
+    const sorted = sortedObservers(filtered);
+
     el.innerHTML = `
       <div class="obs-summary">
         <span class="obs-stat"><span class="health-dot health-green">●</span> ${online} Online</span>
@@ -112,10 +154,15 @@
       <div class="obs-table-scroll"><table class="data-table obs-table" id="obsTable">
         <caption class="sr-only">Observer status and statistics</caption>
         <thead><tr>
-          <th>Status</th><th>Name</th><th>Region</th><th>Last Seen</th>
-          <th>Packets</th><th>Packets/Hour</th><th>Uptime</th>
+          <th class="sortable${sortCol==='status'?' sort-active':''}" data-sort="status">Status${sortArrow('status')}</th>
+          <th class="sortable${sortCol==='name'?' sort-active':''}" data-sort="name">Name${sortArrow('name')}</th>
+          <th class="sortable${sortCol==='region'?' sort-active':''}" data-sort="region">Region${sortArrow('region')}</th>
+          <th class="sortable${sortCol==='last_seen'?' sort-active':''}" data-sort="last_seen">Last Seen${sortArrow('last_seen')}</th>
+          <th class="sortable${sortCol==='packet_count'?' sort-active':''}" data-sort="packet_count">Packets${sortArrow('packet_count')}</th>
+          <th class="sortable${sortCol==='packets_hr'?' sort-active':''}" data-sort="packets_hr">Packets/Hour${sortArrow('packets_hr')}</th>
+          <th class="sortable${sortCol==='uptime'?' sort-active':''}" data-sort="uptime">Uptime${sortArrow('uptime')}</th>
         </tr></thead>
-        <tbody>${filtered.map(o => {
+        <tbody>${sorted.map(o => {
           const h = healthStatus(o.last_seen);
           const shape = h.cls === 'health-green' ? '●' : h.cls === 'health-yellow' ? '▲' : '✕';
           return `<tr style="cursor:pointer" onclick="goto('/observers/${encodeURIComponent(o.id)}')">
@@ -130,6 +177,9 @@
         }).join('')}</tbody>
       </table></div>`;
     makeColumnsResizable('#obsTable', 'meshcore-obs-col-widths');
+    el.querySelectorAll('th.sortable').forEach(th => {
+      th.addEventListener('click', () => toggleSort(th.dataset.sort));
+    });
   }
 
 
