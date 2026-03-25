@@ -870,7 +870,8 @@ button.ch-item.selected .ch-badge {
 
 /* === Responsive — Mobile (≤640px) === */
 @media (max-width: 640px) {
-  .brand-text { display: none; }
+  .brand-text { font-size: 13px; }
+  .nav-brand { font-size: 13px; gap: 5px; }
   .nav-right { gap: 2px; }
   /* Hide non-essential nav buttons on mobile to avoid overflow */
   .nav-stats { display: none; }
