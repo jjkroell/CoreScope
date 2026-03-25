@@ -585,17 +585,21 @@
       tbody.addEventListener('keydown', handler);
     }
 
-    // Escape to close node detail panel
-    document.addEventListener('keydown', function nodesPanelEsc(e) {
-      if (e.key === 'Escape') {
-        const panel = document.getElementById('nodesRight');
-        if (panel && !panel.classList.contains('empty')) {
-          panel.classList.add('empty');
-          panel.innerHTML = '<span>Select a node to view details</span>';
-          selectedKey = null;
-          renderRows();
-        }
+    // Close button and Escape to close node detail panel
+    function closeNodePanel() {
+      const panel = document.getElementById('nodesRight');
+      if (panel && !panel.classList.contains('empty')) {
+        panel.classList.add('empty');
+        panel.innerHTML = '<span>Select a node to view details</span>';
+        selectedKey = null;
+        renderRows();
       }
+    }
+    document.getElementById('nodesRight').addEventListener('click', function(e) {
+      if (e.target.closest('[data-action="close-node-panel"]')) closeNodePanel();
+    });
+    document.addEventListener('keydown', function nodesPanelEsc(e) {
+      if (e.key === 'Escape') closeNodePanel();
     });
 
     renderRows();
@@ -685,6 +689,7 @@
 
     panel.innerHTML = `
       <div class="node-detail">
+        <button class="panel-close-btn" data-action="close-node-panel" title="Close" aria-label="Close detail panel">✕</button>
         <div class="node-detail-name">${escapeHtml(n.name || '(unnamed)')}</div>
         <div class="node-detail-role">${renderNodeBadges(n, roleColor)}
           <a href="/nodes/${encodeURIComponent(n.public_key)}" class="btn-primary" style="display:inline-block;text-decoration:none;font-size:11px;padding:2px 8px;margin-left:8px">🔍 Details</a>

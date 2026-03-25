@@ -617,7 +617,7 @@ button.ch-item.selected .ch-badge {
 }
 
 /* Node Detail */
-.node-detail { padding: 4px 0; }
+.node-detail { padding: 4px 0; position: relative; }
 .node-detail-name { font-size: 20px; font-weight: 700; margin: 12px 0 4px; }
 .node-detail-role { margin-bottom: 12px; }
 .node-detail-section { margin-bottom: 16px; }
@@ -1458,7 +1458,7 @@ tr[data-hops]:hover { background: rgba(59,130,246,0.1); }
 .node-top-row .node-qr-wrap { flex: 1; min-width: 120px; max-width: 160px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
 .node-qr-wrap--full { max-width: 240px; margin: 0 auto; }
 /* Node name cell — public key hover tooltip */
-.node-name-cell { position: relative; }
+.node-name-cell { position: relative; overflow: visible !important; }
 .node-name-label { cursor: default; }
 .node-pubkey-tip {
   display: none;
@@ -1469,8 +1469,7 @@ tr[data-hops]:hover { background: rgba(59,130,246,0.1); }
   box-shadow: 0 4px 12px rgba(0,0,0,.35); z-index: 200;
   pointer-events: none;
 }
-.node-name-label:hover + .node-pubkey-tip,
-.node-name-label:focus + .node-pubkey-tip { display: block; }
+.node-name-cell:hover .node-pubkey-tip { display: block; }
 
 .node-stats-table { width: 100%; border-collapse: collapse; font-size: 13px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 12px; }
 .node-stats-table td { padding: 6px 12px; border-bottom: 1px solid var(--border); }
