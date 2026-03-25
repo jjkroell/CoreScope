@@ -634,14 +634,14 @@
       const lastSeenClass = status === 'active' ? 'last-seen-active' : 'last-seen-stale';
       return `<tr data-key="${n.public_key}" data-action="select" data-value="${n.public_key}" tabindex="0" role="row" class="${selectedKey === n.public_key ? 'selected' : ''}${isClaimed ? ' claimed-row' : ''}">
         <td>${favStar(n.public_key, 'node-fav')}${isClaimed ? '<span class="claimed-badge" title="My Mesh">★</span> ' : ''}<strong>${n.name || '(unnamed)'}</strong></td>
-        <td class="mono">${truncate(n.public_key, 16)}</td>
+        <td class="mono">${n.public_key}</td>
         <td><span class="badge" style="background:${roleColor}20;color:${roleColor}">${n.role}</span></td>
         <td class="${lastSeenClass}">${timeAgo(n.last_heard || n.last_seen)}</td>
         <td>${n.advert_count || 0}</td>
       </tr>`;
     }).join('');
     bindFavStars(tbody);
-    makeColumnsResizable('#nodesTable', 'meshcore-nodes-col-widths');
+    makeColumnsResizable('#nodesTable', 'meshcore-nodes-col-widths-v2');
   }
 
   async function selectNode(pubkey) {

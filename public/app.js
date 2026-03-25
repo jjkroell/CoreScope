@@ -761,9 +761,16 @@ function makeColumnsResizable(tableSelector, storageKey) {
     // Temporarily set auto layout to measure
     table.style.tableLayout = 'auto';
     table.style.width = 'auto';
-    // Remove nowrap temporarily so we get true content width
+    // Remove constraints temporarily so we get true content width
     const cells = table.querySelectorAll('td, th');
-    cells.forEach(c => { c.dataset.origWs = c.style.whiteSpace || ''; c.style.whiteSpace = 'nowrap'; });
+    cells.forEach(c => {
+      c.dataset.origWs = c.style.whiteSpace || '';
+      c.dataset.origOv = c.style.overflow || '';
+      c.dataset.origMx = c.style.maxWidth || '';
+      c.style.whiteSpace = 'nowrap';
+      c.style.overflow = 'visible';
+      c.style.maxWidth = 'none';
+    });
 
     // Measure each column's max content width across header + rows
     widths = ths.map((th, i) => {
@@ -775,7 +782,12 @@ function makeColumnsResizable(tableSelector, storageKey) {
       return maxW + 4; // small padding buffer
     });
 
-    cells.forEach(c => { c.style.whiteSpace = c.dataset.origWs || ''; delete c.dataset.origWs; });
+    cells.forEach(c => {
+      c.style.whiteSpace = c.dataset.origWs || '';
+      c.style.overflow = c.dataset.origOv || '';
+      c.style.maxWidth = c.dataset.origMx || '';
+      delete c.dataset.origWs; delete c.dataset.origOv; delete c.dataset.origMx;
+    });
   }
 
   // Now fit to container: if total > container, squish widest first
