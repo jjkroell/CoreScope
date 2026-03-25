@@ -647,7 +647,7 @@
         <table class="analytics-table">
           <thead><tr><th>Channel</th><th>Hash</th><th>Messages</th><th>Unique Senders</th><th>Last Activity</th><th>Decrypted</th></tr></thead>
           <tbody>
-            ${ch.channels.map(c => `<tr class="clickable-row" data-action="navigate" data-value="#/channels?ch=${c.hash}" tabindex="0" role="row">
+            ${ch.channels.map(c => `<tr class="clickable-row" data-action="navigate" data-value="/channels?ch=${c.hash}" tabindex="0" role="row">
               <td><strong>${esc(c.name || 'Unknown')}</strong></td>
               <td class="mono">${typeof c.hash === 'number' ? '0x' + c.hash.toString(16).toUpperCase().padStart(2, '0') : c.hash}</td>
               <td>${c.messages}</td>
@@ -758,7 +758,7 @@
           <table class="analytics-table">
             <thead><tr><th>Node</th><th>Hash Size</th><th>Adverts</th><th>Last Seen</th></tr></thead>
             <tbody>
-              ${data.multiByteNodes.map(n => `<tr class="clickable-row" data-action="navigate" data-value="#/nodes/${n.pubkey ? encodeURIComponent(n.pubkey) : ''}" tabindex="0" role="row">
+              ${data.multiByteNodes.map(n => `<tr class="clickable-row" data-action="navigate" data-value="/nodes/${n.pubkey ? encodeURIComponent(n.pubkey) : ''}" tabindex="0" role="row">
                 <td><strong>${esc(n.name)}</strong></td>
                 <td><span class="badge badge-hash-${n.hashSize}">${n.hashSize}-byte</span></td>
                 <td>${n.packets}</td>
@@ -775,7 +775,7 @@
           <thead><tr><th>Hop</th><th>Node</th><th>Bytes</th><th>Appearances</th></tr></thead>
           <tbody>
             ${data.topHops.map(h => {
-              const link = h.pubkey ? `#/nodes/${encodeURIComponent(h.pubkey)}` : `#/packets?search=${h.hex}`;
+              const link = h.pubkey ? `/nodes/${encodeURIComponent(h.pubkey)}` : `/packets?search=${h.hex}`;
               return `<tr class="clickable-row" data-action="navigate" data-value="${link}" tabindex="0" role="row">
               <td class="mono">${h.hex}</td>
               <td>${h.name ? `<strong>${esc(h.name)}</strong>` : '<span class="text-muted">unknown</span>'}</td>

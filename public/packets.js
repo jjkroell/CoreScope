@@ -1117,9 +1117,9 @@
     selectedObservationId = obsRowId || null;
     const obsParam = selectedObservationId ? `?obs=${selectedObservationId}` : '';
     if (hash) {
-      history.replaceState(null, '', `#/packets/${hash}${obsParam}`);
+      history.replaceState(null, '', `/packets/${hash}${obsParam}`);
     } else {
-      history.replaceState(null, '', `#/packets/${id}${obsParam}`);
+      history.replaceState(null, '', `/packets/${id}${obsParam}`);
     }
     renderTableRows();
     const isMobileNow = window.innerWidth <= 640;

@@ -295,6 +295,15 @@
   .feed-show-btn { display: none !important; }
   .live-legend { display: none !important; }
   .legend-toggle-btn { display: none !important; }
+  .live-node-detail {
+    width: calc(100vw - 16px);
+    max-width: 360px;
+    right: 8px;
+    top: auto;
+    bottom: 80px;
+    max-height: 50vh;
+  }
+  .live-node-detail.hidden { transform: translateY(120%); }
   .live-header { 
     flex-wrap: wrap; gap: 6px; padding: 6px 10px;
     top: 56px; left: 8px; right: 8px; max-width: calc(100vw - 16px);

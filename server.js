@@ -127,6 +127,8 @@ try {
 
 // Merge: rainbow (lowest priority) -> derived from hashChannels -> explicit config (highest priority)
 const channelKeys = { ...rainbowKeys, ...derivedHashChannelKeys, ...configuredChannelKeys };
+// Only channels explicitly configured in hashChannels (or added via /api/channels/add) are allowed on the channels page
+const approvedChannels = new Set([...Object.keys(derivedHashChannelKeys), ...Object.keys(configuredChannelKeys)]);
 
 const totalKeys = Object.keys(channelKeys).length;
 const derivedCount = Object.keys(derivedHashChannelKeys).length;
@@ -136,14 +138,17 @@ console.log(`[channels] ${totalKeys} channel key(s) (${derivedCount} derived fro
 // Auto-learn new channel names: when a channel name is seen for the first time,
 // add it to hashChannels config and derive its key in memory so raw packets are decryptable.
 const configPath = path.join(__dirname, 'config.json');
-function autoLearnChannel(channelName) {
+function autoLearnChannel(channelName, { persist = false } = {}) {
   if (!channelName || typeof channelName !== 'string') return;
   const name = channelName.trim().startsWith('#') ? channelName.trim() : `#${channelName.trim()}`;
   if (blockedChannels.has(name.toLowerCase())) return;
   if (channelKeys[name]) return; // already known
+  // Auto-learning from MQTT is disabled — only allow explicit adds via /api/channels/add
+  if (!persist) return;
   const key = deriveHashtagChannelKey(name);
   channelKeys[name] = key;
   derivedHashChannelKeys[name] = key;
+  approvedChannels.add(name);
   // Persist to config.json
   try {
     const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'));
@@ -151,10 +156,10 @@ function autoLearnChannel(channelName) {
     if (!cfg.hashChannels.includes(name)) {
       cfg.hashChannels.push(name);
       fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2) + '\n');
-      console.log(`[channels] Auto-learned new channel: ${name}`);
+      console.log(`[channels] Added channel: ${name}`);
     }
   } catch (e) {
-    console.warn('[channels] Failed to persist auto-learned channel:', e.message);
+    console.warn('[channels] Failed to persist channel:', e.message);
   }
 }
 
@@ -2263,7 +2268,7 @@ app.post('/api/channels/add', (req, res) => {
   if (!name || typeof name !== 'string') return res.status(400).json({ error: 'name required' });
   const channelName = name.trim().startsWith('#') ? name.trim() : `#${name.trim()}`;
   if (blockedChannels.has(channelName.toLowerCase())) return res.status(400).json({ error: 'channel is blocked' });
-  autoLearnChannel(channelName);
+  autoLearnChannel(channelName, { persist: true });
 
   // Retroactively re-decode any encrypted packets in pktStore that match this channel's key
   const { ChannelCrypto } = require('@michaelhart/meshcore-decoder/dist/crypto/channel-crypto');
@@ -2292,7 +2297,8 @@ app.post('/api/channels/add', (req, res) => {
     }
   }
 
-  cache.debouncedInvalidateAll();
+  // Invalidate immediately so the client re-fetch sees the new channel right away
+  cache.invalidate('channels');
   console.log(`[channels] Added ${channelName}, re-decoded ${redecoded} existing packets`);
   res.json({ ok: true, name: channelName, redecoded });
 });
@@ -2313,10 +2319,11 @@ app.get('/api/channels', (req, res) => {
     let decoded;
     try { decoded = JSON.parse(pkt.decoded_json); } catch { continue; }
 
-    // Only show messages with a resolved channel name (filters encrypted garbage and unnamed packets)
-    if (!decoded.channel) continue;
+    // Only show messages with a known named channel (must be in hashChannels, starts with '#')
+    if (!decoded.channel || !decoded.channel.startsWith('#')) continue;
     const channelName = decoded.channel;
     if (blockedChannels.has(channelName.toLowerCase())) continue;
+    if (!approvedChannels.has(channelName)) continue; // not a configured channel — skip
     const key = channelName;
     
     if (!channelMap[key]) {
@@ -2364,9 +2371,10 @@ app.get('/api/channels/:hash/messages', (req, res) => {
   for (const pkt of packets) {
     let decoded;
     try { decoded = JSON.parse(pkt.decoded_json); } catch { continue; }
-    // Only decrypted messages
+    // Only decrypted, named channel messages
     if (decoded.type !== 'CHAN') continue;
-    const ch = decoded.channel || 'unknown';
+    const ch = decoded.channel || '';
+    if (!ch.startsWith('#') || !approvedChannels.has(ch)) continue;
     if (ch !== channelHash) continue;
 
     const sender = decoded.sender || (decoded.text ? decoded.text.split(': ')[0] : null) || pkt.observer_name || pkt.observer_id || 'Unknown';

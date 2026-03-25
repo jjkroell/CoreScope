@@ -416,7 +416,7 @@
   margin: 0 auto;
   padding: 0 20px 20px;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(380px, 100%), 1fr));
   gap: 16px;
 }
 .my-nodes-loading { color: var(--text-muted); font-size: .85rem; padding: 20px; grid-column: 1/-1; }

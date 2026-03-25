@@ -256,7 +256,7 @@
     regionChangeHandler = RegionFilter.onChange(function () { loadChannels(); });
 
     loadChannels().then(() => {
-      if (routeParam) selectChannel(routeParam);
+      if (routeParam) selectChannel(routeParam.startsWith('#') ? routeParam : '#' + routeParam);
     });
 
     // #89: Sidebar resize handle
@@ -264,10 +264,10 @@
       var sidebar = app.querySelector('.ch-sidebar');
       var handle = app.querySelector('.ch-sidebar-resize');
       var saved = localStorage.getItem('channels-sidebar-width');
-      if (saved) { var w = parseInt(saved, 10); if (w >= 180 && w <= 600) { sidebar.style.width = w + 'px'; sidebar.style.minWidth = w + 'px'; } }
+      if (saved && window.innerWidth > 640) { var w = parseInt(saved, 10); if (w >= 180 && w <= 600) { sidebar.style.width = w + 'px'; sidebar.style.minWidth = w + 'px'; } }
       var dragging = false, startX, startW;
       handle.addEventListener('mousedown', function (e) { dragging = true; startX = e.clientX; startW = sidebar.getBoundingClientRect().width; e.preventDefault(); });
-      document.addEventListener('mousemove', function (e) { if (!dragging) return; var w = Math.max(180, Math.min(600, startW + e.clientX - startX)); sidebar.style.width = w + 'px'; sidebar.style.minWidth = w + 'px'; });
+      document.addEventListener('mousemove', function (e) { if (!dragging) return; var maxW = Math.min(600, Math.floor(window.innerWidth * 0.6)); var w = Math.max(180, Math.min(maxW, startW + e.clientX - startX)); sidebar.style.width = w + 'px'; sidebar.style.minWidth = w + 'px'; });
       document.addEventListener('mouseup', function () { if (!dragging) return; dragging = false; localStorage.setItem('channels-sidebar-width', parseInt(sidebar.style.width, 10)); });
     })();
 
@@ -301,6 +301,20 @@
     });
 
     // Add channel by name
+    function showAddNotice(msg, type) {
+      let el = document.getElementById('chAddNotice');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'chAddNotice';
+        document.querySelector('.ch-add-channel').insertAdjacentElement('afterend', el);
+      }
+      el.className = 'ch-add-notice ch-add-notice--' + type;
+      el.textContent = msg;
+      el.style.display = 'block';
+      clearTimeout(el._hideTimer);
+      el._hideTimer = setTimeout(() => { el.style.display = 'none'; }, 6000);
+    }
+
     async function addChannel() {
       const input = document.getElementById('chAddInput');
       const btn = document.getElementById('chAddBtn');
@@ -314,9 +328,12 @@
           input.value = '';
           channels.length = 0;
           await loadChannels(false, true);
+          showAddNotice(`${data.name} added. It will appear in the list once messages are received on this channel.`, 'info');
         } else {
-          alert(data.error || 'Failed to add channel');
+          showAddNotice(data.error || 'Failed to add channel', 'error');
         }
+      } catch (e) {
+        showAddNotice('Failed to add channel', 'error');
       } finally {
         btn.disabled = false; btn.textContent = '+';
       }
@@ -424,7 +441,7 @@
         if (!payload) continue;
 
         var channelName = payload.channel;
-        if (!channelName) continue;
+        if (!channelName || !channelName.startsWith('#')) continue;
         var rawText = payload.text || '';
         var sender = payload.sender || null;
         var displayText = rawText;
@@ -589,10 +606,8 @@
         ? `${ch.lastSender}: ${truncate(ch.lastMessage, 28)}`
         : `${ch.messageCount} messages`;
       const sel = selectedHash === ch.hash ? ' selected' : '';
-      const abbr = name.startsWith('#') ? name.slice(0, 3) : name.slice(0, 2).toUpperCase();
-
       return `<button class="ch-item${sel}" data-hash="${ch.hash}" type="button" role="option" aria-selected="${selectedHash === ch.hash ? 'true' : 'false'}" aria-label="${escapeHtml(name)}">
-        <div class="ch-badge" style="background:${color}" aria-hidden="true">${escapeHtml(abbr)}</div>
+        <div class="ch-badge" style="background:${color};box-shadow:0 0 0 3px ${color}22" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px;opacity:0.95"><path d="M2 12 Q6 6 12 12 Q18 6 22 12"/><path d="M5 15.5 Q8.5 11 12 15.5 Q15.5 11 19 15.5"/><circle cx="12" cy="19" r="1.5" fill="currentColor" stroke="none"/></svg></div>
         <div class="ch-item-body">
           <div class="ch-item-top">
             <span class="ch-item-name">${escapeHtml(name)}</span>
@@ -606,7 +621,8 @@
 
   async function selectChannel(hash) {
     selectedHash = hash;
-    history.replaceState(null, '', `#/channels/${encodeURIComponent(hash)}`);
+    const slug = hash.startsWith('#') ? hash.slice(1) : hash;
+    history.replaceState(null, '', `/channels/${encodeURIComponent(slug)}`);
     renderChannelList();
     const ch = channels.find(c => c.hash === hash);
     const name = ch?.name || `Channel ${hash}`;
