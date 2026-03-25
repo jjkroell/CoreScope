@@ -410,7 +410,6 @@ window.addEventListener('DOMContentLoaded', () => {
   });
 
   // Dynamic compact mode — collapse nav as soon as any element goes off screen
-  let _firstCompactCheck = true;
   function updateNavCompact() {
     // Measure natural (expanded) nav width by temporarily positioning links off-screen
     navLinks.style.cssText = 'position:fixed;top:-9999px;display:flex;visibility:hidden';
@@ -428,11 +427,7 @@ window.addEventListener('DOMContentLoaded', () => {
     topNav.classList.toggle('nav-compact', compact);
     if (!compact) {
       navLinks.classList.remove('open');
-    } else if (_firstCompactCheck) {
-      // On initial load in compact mode, open the menu so navigation is immediately visible
-      navLinks.classList.add('open');
     }
-    _firstCompactCheck = false;
   }
 
   new ResizeObserver(updateNavCompact).observe(topNav);

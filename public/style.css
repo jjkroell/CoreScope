@@ -871,7 +871,12 @@ button.ch-item.selected .ch-badge {
 /* === Responsive — Mobile (≤640px) === */
 @media (max-width: 640px) {
   .brand-text { display: none; }
-  .nav-right { gap: 4px; }
+  .nav-right { gap: 2px; }
+  /* Hide non-essential nav buttons on mobile to avoid overflow */
+  .nav-stats { display: none; }
+  .nav-fav-wrap { display: none; }
+  a.nav-btn[data-route="perf"] { display: none; }
+  #customizeToggle { display: none; }
 
   /* Layouts: stack instead of side-by-side */
   .split-layout { flex-direction: column; overflow-y: auto; }
