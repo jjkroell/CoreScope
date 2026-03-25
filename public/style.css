@@ -167,7 +167,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .nav-stats .stat-val.updated { color: var(--accent); }
 
 /* === Layout === */
-#app { height: calc(100vh - 52px); height: calc(100dvh - 52px); overflow: hidden; }
+#app { height: calc(100vh - 52px); height: calc(100dvh - 52px); overflow: clip; }
 
 .split-layout {
   display: flex; height: 100%; overflow: clip;
@@ -255,7 +255,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
   text-align: left; padding: 4px 6px; font-weight: 600; font-size: 11px;
   text-transform: uppercase; letter-spacing: .3px; color: var(--text-muted);
   border-bottom: 2px solid var(--border); background: var(--card-bg);
-  position: sticky; top: 0; z-index: 1;
+  position: sticky; top: 0; z-index: 3;
 }
 .data-table th.sortable { cursor: pointer; }
 .data-table th.sortable:hover { color: var(--accent); }
