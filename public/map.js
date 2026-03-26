@@ -657,6 +657,10 @@
       const marker = L.marker(pos, { icon: m.icon, alt: m.alt });
       marker._nodeKey = m.node.public_key || m.node.id || null;
       marker.bindPopup(m.popupFn(), { maxWidth: 280 });
+      marker.on('popupopen', function(e) {
+        const el = e.popup.getElement();
+        if (el) bindFavStars(el);
+      });
       markerLayer.addLayer(marker);
 
       if (m.offset > 10) {
@@ -709,7 +713,10 @@
 
     return `
       <div class="map-popup" style="font-family:var(--font);min-width:180px;">
-        <h3 style="font-weight:700;font-size:14px;margin:0 0 4px;">${safeEsc(node.name || 'Unknown')}</h3>
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <h3 style="font-weight:700;font-size:14px;margin:0;flex:1;">${safeEsc(node.name || 'Unknown')}</h3>
+          <button class="fav-star node-fav map-fav-btn" data-fav="${safeEsc(node.public_key)}" title="${isFavorite(node.public_key) ? 'Remove from favourites' : 'Add to favourites'}" style="background:none;border:none;cursor:pointer;font-size:18px;padding:0;line-height:1;flex-shrink:0;color:var(--accent);">${isFavorite(node.public_key) ? '★' : '☆'}</button>
+        </div>
         ${roleBadge}
         <dl style="margin-top:8px;font-size:12px;">
           ${hashPrefixRow}

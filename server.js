@@ -142,12 +142,14 @@ function autoLearnChannel(channelName, { persist = false } = {}) {
   if (!channelName || typeof channelName !== 'string') return;
   const name = channelName.trim().startsWith('#') ? channelName.trim() : `#${channelName.trim()}`;
   if (blockedChannels.has(name.toLowerCase())) return;
-  if (channelKeys[name]) return; // already known
-  // Auto-learning from MQTT is disabled — only allow explicit adds via /api/channels/add
+  // Auto-learning from MQTT is disabled — only explicit adds via /api/channels/add
   if (!persist) return;
-  const key = deriveHashtagChannelKey(name);
-  channelKeys[name] = key;
-  derivedHashChannelKeys[name] = key;
+  // Add key if not already known (rainbow table channels skip derivation)
+  if (!channelKeys[name]) {
+    const key = deriveHashtagChannelKey(name);
+    channelKeys[name] = key;
+    derivedHashChannelKeys[name] = key;
+  }
   approvedChannels.add(name);
   // Persist to config.json
   try {
@@ -494,6 +496,39 @@ function pruneOldChannelMessages() {
 }
 pruneOldChannelMessages(); // run once at startup
 setInterval(pruneOldChannelMessages, 60 * 60 * 1000).unref(); // then hourly
+
+// Remove approved channels with no DB activity in the last 7 days — runs every 24 hours
+const CHANNEL_IDLE_EXPIRE_MS = 7 * 24 * 60 * 60 * 1000;
+function pruneIdleChannels() {
+  try {
+    const cutoff = new Date(Date.now() - CHANNEL_IDLE_EXPIRE_MS).toISOString();
+    const stmt = db.db.prepare(
+      `SELECT MAX(first_seen) AS last_seen FROM transmissions WHERE payload_type=5 AND json_extract(decoded_json,'$.channel')=?`
+    );
+    const removed = [];
+    for (const ch of [...approvedChannels]) {
+      const row = stmt.get(ch);
+      if (!row || !row.last_seen || row.last_seen < cutoff) {
+        approvedChannels.delete(ch);
+        delete channelKeys[ch];
+        delete derivedHashChannelKeys[ch];
+        removed.push(ch);
+      }
+    }
+    if (removed.length > 0) {
+      try {
+        const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        cfg.hashChannels = (cfg.hashChannels || []).filter(c => !removed.includes(c));
+        fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2) + '\n');
+      } catch (e) {
+        console.warn('[channels] Failed to persist channel removal:', e.message);
+      }
+      cache.invalidate('channels');
+      console.log(`[channels] Removed ${removed.length} idle channel(s): ${removed.join(', ')}`);
+    }
+  } catch (e) { console.error('[channels] Idle prune error:', e.message); }
+}
+setInterval(pruneIdleChannels, 24 * 60 * 60 * 1000).unref(); // every 24 hours
 
 // Manual WAL checkpoint every 5 minutes (auto-checkpoint disabled to avoid random event loop spikes)
 setInterval(() => {
@@ -983,7 +1018,33 @@ app.get('/api/packets', (req, res) => {
   const { limit = 50, offset = 0, type, route, region, observer, hash, since, until, groupByHash, node, nodes } = req.query;
   const order = req.query.order === 'asc' ? 'ASC' : 'DESC';
   const bObs = getBoundaryObserverIds();
-  const inBoundary = bObs ? (p => p.observations && p.observations.some(o => bObs.has(o.observer_id))) : null;
+
+  // Build set of node pubkeys with coordinates OUTSIDE the boundary — used to exclude relayed foreign packets
+  let outsideNodes = null;
+  if (configBoundary) {
+    outsideNodes = new Set();
+    for (const n of db.db.prepare('SELECT public_key, lat, lon FROM nodes WHERE lat IS NOT NULL AND lon IS NOT NULL AND lat != 0 AND lon != 0').all()) {
+      if (!isPointInPolygon(n.lat, n.lon, configBoundary)) outsideNodes.add(n.public_key?.toLowerCase());
+    }
+  }
+
+  // inBoundary: packet must be received by an in-boundary observer AND not originate from a known outside-boundary node
+  const inBoundary = bObs ? (p => {
+    // Check observer — fall back to observer_id field when observations array is absent (queryGrouped path)
+    const obsOk = p.observations && p.observations.length
+      ? p.observations.some(o => bObs.has(o.observer_id))
+      : (p.observer_id ? bObs.has(p.observer_id) : true);
+    if (!obsOk) return false;
+    // Check sender node — exclude if decoded pubkey is a known outside-boundary node
+    if (outsideNodes && outsideNodes.size > 0 && p.decoded_json) {
+      try {
+        const dec = typeof p.decoded_json === 'string' ? JSON.parse(p.decoded_json) : p.decoded_json;
+        const pubkey = (dec.pubKey || dec.public_key || dec.sender_pubkey || '').toLowerCase();
+        if (pubkey && outsideNodes.has(pubkey)) return false;
+      } catch {}
+    }
+    return true;
+  }) : null;
 
   // Multi-node filter: comma-separated pubkeys
   if (nodes) {
@@ -2441,12 +2502,7 @@ app.get('/api/observers', (req, res) => {
   for (const n of allNodes) nodeMap.set(n.public_key?.toLowerCase(), n);
   let result = observers.map(o => {
     const obsPackets = pktStore.byObserver.get(o.id) || [];
-    // byObserver is sorted newest-first, so count from front until we pass the cutoff
-    let count = 0;
-    for (let i = 0; i < obsPackets.length; i++) {
-      if (obsPackets[i].timestamp > oneHourAgo) count++;
-      else break;
-    }
+    const count = obsPackets.filter(p => p.timestamp > oneHourAgo).length;
     const node = nodeMap.get(o.id?.toLowerCase());
     return { ...o, packetsLastHour: count, lat: node?.lat || null, lon: node?.lon || null, nodeRole: node?.role || null };
   });

@@ -50,14 +50,14 @@
   function init(app) {
     app.innerHTML = `
       <div class="observers-page">
-        <div class="page-header">
-          <h2>Observer Status</h2>
-          <button class="btn-icon" data-action="obs-refresh" title="Refresh" aria-label="Refresh observers">🔄</button>
+        <div class="obs-topbar">
+          <h2 class="obs-title">Observer Status</h2>
+          <div id="obsRegionFilter" class="region-filter-container obs-region-filter"></div>
+          <button class="btn-icon obs-refresh-btn" data-action="obs-refresh" title="Refresh" aria-label="Refresh observers">🔄</button>
         </div>
-        <div id="obsRegionFilter" class="region-filter-container"></div>
         <div id="obsContent"><div class="text-center text-muted" style="padding:40px">Loading…</div></div>
       </div>`;
-    RegionFilter.init(document.getElementById('obsRegionFilter'));
+    RegionFilter.init(document.getElementById('obsRegionFilter'), { compact: true });
     regionChangeHandler = RegionFilter.onChange(function () { render(); });
     loadObservers();
     // Event delegation for data-action buttons
@@ -151,7 +151,7 @@
         <span class="obs-stat"><span class="health-dot health-red">✕</span> ${offline} Offline</span>
         <span class="obs-stat">📡 ${filtered.length} Total</span>
       </div>
-      <div class="obs-table-scroll"><table class="data-table obs-table" id="obsTable">
+      <div class="obs-table-wrap"><table class="data-table obs-table" id="obsTable">
         <caption class="sr-only">Observer status and statistics</caption>
         <thead><tr>
           <th class="sortable${sortCol==='status'?' sort-active':''}" data-sort="status">Status${sortArrow('status')}</th>
@@ -165,7 +165,8 @@
         <tbody>${sorted.map(o => {
           const h = healthStatus(o.last_seen);
           const shape = h.cls === 'health-green' ? '●' : h.cls === 'health-yellow' ? '▲' : '✕';
-          return `<tr style="cursor:pointer" onclick="goto('/observers/${encodeURIComponent(o.id)}')">
+          const statusRowCls = h.cls === 'health-green' ? 'obs-row-online' : h.cls === 'health-yellow' ? 'obs-row-stale' : 'obs-row-offline';
+          return `<tr class="${statusRowCls}" style="cursor:pointer" onclick="goto('/observers/${encodeURIComponent(o.id)}')">
             <td><span class="health-dot ${h.cls}" title="${h.label}">${shape}</span> ${h.label}</td>
             <td class="mono">${o.name || o.id}</td>
             <td>${o.iata ? `<span class="badge-region">${o.iata}</span>` : '—'}</td>

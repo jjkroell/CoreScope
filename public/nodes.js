@@ -5,16 +5,6 @@
   let nodes = [];
   const PAYLOAD_TYPES = {0:'Request',1:'Response',2:'Direct Msg',3:'ACK',4:'Advert',5:'Channel Msg',7:'Anon Req',8:'Path',9:'Trace'};
 
-  function syncClaimedToFavorites() {
-    const myNodes = JSON.parse(localStorage.getItem('meshcore-my-nodes') || '[]');
-    const favs = getFavorites();
-    let changed = false;
-    myNodes.forEach(mn => {
-      if (!favs.includes(mn.pubkey)) { favs.push(mn.pubkey); changed = true; }
-    });
-    if (changed) localStorage.setItem('meshcore-favorites', JSON.stringify(favs));
-  }
-
   let counts = {};
   let selectedKey = null;
   let activeTab = 'all';
@@ -483,11 +473,14 @@
         });
       }
 
-      // Auto-sync claimed → favorites
-      syncClaimedToFavorites();
-
       renderCounts();
+      const _wrap = document.querySelector('.nodes-table-wrap');
+      const _savedScroll = _wrap ? _wrap.scrollTop : 0;
       renderLeft();
+      if (_savedScroll > 0) {
+        const _newWrap = document.querySelector('.nodes-table-wrap');
+        if (_newWrap) _newWrap.scrollTop = _savedScroll;
+      }
     } catch (e) {
       console.error('Failed to load nodes:', e);
       const tbody = document.getElementById('nodesBody');
@@ -638,7 +631,7 @@
       const status = getNodeStatus(n.role || 'companion', lastSeenTime ? new Date(lastSeenTime).getTime() : 0);
       const lastSeenClass = status === 'active' ? 'last-seen-active' : 'last-seen-stale';
       return `<tr data-key="${n.public_key}" data-action="select" data-value="${n.public_key}" tabindex="0" role="row" class="${selectedKey === n.public_key ? 'selected' : ''}${isClaimed ? ' claimed-row' : ''}">
-        <td class="node-name-cell">${favStar(n.public_key, 'node-fav')}${isClaimed ? '<span class="claimed-badge" title="My Mesh">★</span> ' : ''}<strong class="node-name-label" data-pubkey="${n.public_key}">${n.name || '(unnamed)'}</strong><span class="node-pubkey-tip mono">${n.public_key}</span></td>
+        <td class="node-name-cell col-name">${favStar(n.public_key, 'node-fav')}${isClaimed ? '<span class="claimed-badge" title="My Mesh">★</span> ' : ''}<strong class="node-name-label" data-pubkey="${n.public_key}">${n.name || '(unnamed)'}</strong><span class="node-pubkey-tip mono">${n.public_key}</span></td>
         <td><span class="badge" style="background:${roleColor}20;color:${roleColor}">${n.role}</span></td>
         <td class="${lastSeenClass}">${timeAgo(n.last_heard || n.last_seen)}</td>
         <td>${n.advert_count || 0}</td>

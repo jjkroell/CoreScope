@@ -16,8 +16,8 @@
   let showGhostHops = localStorage.getItem('live-ghost-hops') !== 'false';
   let realisticPropagation = localStorage.getItem('live-realistic-propagation') === 'true';
   let showOnlyFavorites = localStorage.getItem('live-favorites-only') === 'true';
-  let matrixMode = localStorage.getItem('live-matrix-mode') === 'true';
-  let matrixRain = localStorage.getItem('live-matrix-rain') === 'true';
+  const matrixMode = false;
+  const matrixRain = false;
   let rainCanvas = null, rainCtx = null, rainDrops = [], rainRAF = null;
   const propagationBuffer = new Map(); // hash -> {timer, packets[]}
   let _onResize = null;
@@ -615,20 +615,11 @@
             <div class="live-stat-pill rate-pill"><span id="livePktRate">0</span>/min</div>
           </div>
           <div class="live-toggles">
-            <label><input type="checkbox" id="liveHeatToggle" checked aria-describedby="heatDesc"> Heat</label>
-            <span id="heatDesc" class="sr-only">Overlay a density heat map on the mesh nodes</span>
-            <label><input type="checkbox" id="liveGhostToggle" checked aria-describedby="ghostDesc"> Ghosts</label>
-            <span id="ghostDesc" class="sr-only">Show interpolated ghost markers for unknown hops</span>
-            <label><input type="checkbox" id="liveRealisticToggle" aria-describedby="realisticDesc"> Realistic</label>
-            <span id="realisticDesc" class="sr-only">Buffer packets by hash and animate all paths simultaneously</span>
-            <label><input type="checkbox" id="liveMatrixToggle" aria-describedby="matrixDesc"> Matrix</label>
-            <span id="matrixDesc" class="sr-only">Animate packet hex bytes flowing along paths like the Matrix</span>
-            <label><input type="checkbox" id="liveMatrixRainToggle" aria-describedby="rainDesc"> Rain</label>
-            <span id="rainDesc" class="sr-only">Matrix rain overlay — packets fall as hex columns</span>
-            <label><input type="checkbox" id="liveAudioToggle" aria-describedby="audioDesc"> 🎵 Audio</label>
-            <span id="audioDesc" class="sr-only">Sonify packets — turn raw bytes into generative music</span>
-            <label><input type="checkbox" id="liveFavoritesToggle" aria-describedby="favDesc"> ⭐ Favorites</label>
-            <span id="favDesc" class="sr-only">Show only favorited and claimed nodes</span>
+            <label class="live-toggle-tip" data-tip="Overlays a colour density heatmap on the map — brighter areas indicate higher concentrations of active mesh nodes"><input type="checkbox" id="liveHeatToggle" checked> Heat</label>
+            <label class="live-toggle-tip" data-tip="When a packet travels through a relay node with no GPS position, a ghost marker is placed at an estimated midpoint along the path so the route can still be visualised"><input type="checkbox" id="liveGhostToggle" checked> Ghosts</label>
+            <label class="live-toggle-tip" data-tip="Groups packets by their unique hash and animates all observed relay paths at the same time — accurately shows how a single packet propagated across the entire mesh simultaneously"><input type="checkbox" id="liveRealisticToggle"> Realistic</label>
+            <label class="live-toggle-tip" data-tip="Converts incoming packet data into generative music in real time — each packet type and byte pattern produces a unique tone. Use the BPM and volume sliders to tune the sound"><input type="checkbox" id="liveAudioToggle"> 🎵 Audio</label>
+            <label class="live-toggle-tip" data-tip="Filters the map to show only nodes you have starred as favourites or claimed as your own — useful for monitoring specific devices"><input type="checkbox" id="liveFavoritesToggle"> ⭐ Favourites</label>
           </div>
           <div class="audio-controls hidden" id="audioControls">
             <label class="audio-slider-label">Voice <select id="audioVoiceSelect" class="audio-voice-select"></select></label>
@@ -800,41 +791,6 @@
       localStorage.setItem('live-favorites-only', showOnlyFavorites);
       applyFavoritesFilter();
     });
-
-    const matrixToggle = document.getElementById('liveMatrixToggle');
-    matrixToggle.checked = matrixMode;
-    matrixToggle.addEventListener('change', (e) => {
-      matrixMode = e.target.checked;
-      localStorage.setItem('live-matrix-mode', matrixMode);
-      applyMatrixTheme(matrixMode);
-      if (matrixMode) {
-        hideHeatMap();
-        const ht = document.getElementById('liveHeatToggle');
-        if (ht) { ht.checked = false; ht.disabled = true; }
-      } else {
-        const ht = document.getElementById('liveHeatToggle');
-        if (ht) { ht.disabled = false; }
-      }
-    });
-    applyMatrixTheme(matrixMode);
-    if (matrixMode) {
-      hideHeatMap();
-      const ht = document.getElementById('liveHeatToggle');
-      if (ht) { ht.checked = false; ht.disabled = true; }
-    } else {
-      // Ensure heat toggle is enabled if matrix mode is off (recover from stale state)
-      const ht = document.getElementById('liveHeatToggle');
-      if (ht) { ht.disabled = false; }
-    }
-
-    const rainToggle = document.getElementById('liveMatrixRainToggle');
-    rainToggle.checked = matrixRain;
-    rainToggle.addEventListener('change', (e) => {
-      matrixRain = e.target.checked;
-      localStorage.setItem('live-matrix-rain', matrixRain);
-      if (matrixRain) startMatrixRain(); else stopMatrixRain();
-    });
-    if (matrixRain) startMatrixRain();
 
     // Audio toggle
     const audioToggle = document.getElementById('liveAudioToggle');
@@ -1137,11 +1093,14 @@
       const statusDot = ageMs < thresholds.degradedMs ? 'health-green' : ageMs < thresholds.silentMs ? 'health-yellow' : 'health-red';
       const statusLabel = ageMs < thresholds.degradedMs ? 'Online' : ageMs < thresholds.silentMs ? 'Degraded' : 'Offline';
 
+      const favBtn = `<button class="fav-star node-fav map-fav-btn" data-fav="${escapeHtml(n.public_key)}" title="${isFavorite(n.public_key) ? 'Remove from favourites' : 'Add to favourites'}" style="background:none;border:none;cursor:pointer;font-size:20px;padding:0;line-height:1;flex-shrink:0;">${isFavorite(n.public_key) ? '★' : '☆'}</button>`;
+
       let html = `
         <div style="padding:16px;">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
             <span class="${statusDot}" style="font-size:18px">●</span>
-            <h3 style="margin:0;font-size:16px;font-weight:700;">${escapeHtml(n.name || 'Unknown')}</h3>
+            <h3 style="margin:0;font-size:16px;font-weight:700;flex:1;">${escapeHtml(n.name || 'Unknown')}</h3>
+            ${favBtn}
           </div>
           <div style="margin-bottom:12px;">
             <span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:600;background:${roleColor};color:#fff;">${roleLabel.toUpperCase()}</span>
@@ -1185,6 +1144,10 @@
       </div></div>`;
 
       content.innerHTML = html;
+      bindFavStars(content, () => {
+        // Refresh the favourite toggle filter if active
+        if (showOnlyFavorites) applyFavoritesFilter();
+      });
 
       // Fetch paths asynchronously
       api('/nodes/' + encodeURIComponent(n.public_key) + '/paths', { ttl: 300 }).then(pathData => {
@@ -1331,7 +1294,18 @@
   }
 
   function applyFavoritesFilter() {
-    // Node markers always stay visible — only rebuild the feed list
+    const favs = getFavorites();
+    for (const [key, marker] of Object.entries(nodeMarkers)) {
+      const show = !showOnlyFavorites || favs.includes(key);
+      const isOnMap = nodesLayer.hasLayer(marker);
+      if (show && !isOnMap) {
+        marker.addTo(nodesLayer);
+        if (marker._glowMarker) marker._glowMarker.addTo(nodesLayer);
+      } else if (!show && isOnMap) {
+        nodesLayer.removeLayer(marker);
+        if (marker._glowMarker) nodesLayer.removeLayer(marker._glowMarker);
+      }
+    }
     rebuildFeedList();
   }
 
@@ -1362,6 +1336,12 @@
     marker._baseColor = color;
     marker._baseSize = size;
     nodeMarkers[n.public_key] = marker;
+
+    // Hide if favorites filter is active and node is not a favorite
+    if (showOnlyFavorites && !getFavorites().includes(n.public_key)) {
+      nodesLayer.removeLayer(marker);
+      nodesLayer.removeLayer(glow);
+    }
 
     // Apply matrix tint if active
     if (matrixMode) {

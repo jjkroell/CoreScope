@@ -483,9 +483,45 @@
 /* Detail area */
 .home-detail-area { margin-bottom: 16px; }
 
+/* Favourites section */
+.fav-nodes-section {
+  max-width: 1200px;
+  margin: 0 auto 24px;
+  padding: 0 16px;
+}
+.fav-nodes-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.fav-nodes-title {
+  font: 700 1rem var(--font);
+  color: #f59e0b;
+  margin: 0;
+  letter-spacing: .02em;
+}
+.fav-nodes-count {
+  font-size: .75rem;
+  color: var(--text-muted);
+}
+.fav-nodes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 320px));
+  gap: 14px;
+  justify-content: center;
+}
+/* Gold star unfav button overrides */
+.fav-node-card .fav-unfav-btn { color: #f59e0b; opacity: 0; }
+.fav-node-card:hover .fav-unfav-btn { opacity: 1; }
+.fav-node-card .fav-unfav-btn:hover { background: rgba(245,158,11,.15); color: #f59e0b; }
+
 /* Responsive */
 @media (max-width: 640px) {
   .my-nodes-grid { grid-template-columns: 1fr; padding: 0 12px 16px; }
+  .fav-nodes-grid { grid-template-columns: 1fr; }
+  .fav-node-card .fav-unfav-btn { opacity: 1; }
   .mnc-metrics { grid-template-columns: repeat(2, 1fr); }
   .mnc-remove { opacity: 1; }
 }

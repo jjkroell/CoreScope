@@ -85,6 +85,8 @@
         </div>
       ` : ''}
 
+      <div id="favNodesSection"></div>
+
       <div class="home-detail-area">
         <div class="home-health" id="homeHealth"></div>
         <div class="home-journey" id="homeJourney"></div>
@@ -123,6 +125,7 @@
     setupSearch(container);
     loadStats();
     if (hasNodes) loadMyNodes();
+    loadFavoriteNodes();
 
     // Checklist accordion
     container.querySelectorAll('.checklist-q').forEach(q => {
@@ -339,6 +342,115 @@
 
     // Card click → health
     grid.querySelectorAll('.my-node-card').forEach(card => {
+      const handler = (e) => {
+        if (e.target.closest('.mnc-remove') || e.target.closest('.mnc-btn')) return;
+        loadHealth(card.dataset.key);
+      };
+      card.addEventListener('click', handler);
+      card.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handler(e); }
+      });
+    });
+  }
+
+  // ==================== FAVOURITE NODES ====================
+  async function loadFavoriteNodes() {
+    const section = document.getElementById('favNodesSection');
+    if (!section) return;
+
+    const favPubkeys = getFavorites(); // global from app.js
+    if (!favPubkeys.length) {
+      section.innerHTML = '';
+      return;
+    }
+
+    section.innerHTML = `
+      <div class="fav-nodes-section">
+        <div class="fav-nodes-header">
+          <h3 class="fav-nodes-title">★ Favourites</h3>
+          <span class="fav-nodes-count">${favPubkeys.length} node${favPubkeys.length !== 1 ? 's' : ''}</span>
+        </div>
+        <div class="fav-nodes-grid" id="favNodesGrid">
+          <div class="my-nodes-loading">Loading favourites…</div>
+        </div>
+      </div>`;
+
+    const grid = document.getElementById('favNodesGrid');
+
+    const cards = await Promise.all(favPubkeys.map(async (pubkey) => {
+      try {
+        const h = await api('/nodes/' + encodeURIComponent(pubkey) + '/health', { ttl: CLIENT_TTL.nodeHealth });
+        const node = h.node || {};
+        const stats = h.stats || {};
+        const obs = h.observers || [];
+
+        const age = stats.lastHeard ? Date.now() - new Date(stats.lastHeard).getTime() : null;
+        const status = age === null ? 'silent' : age < HEALTH_THRESHOLDS.nodeDegradedMs ? 'healthy' : age < HEALTH_THRESHOLDS.nodeSilentMs ? 'degraded' : 'silent';
+        const statusDot = status === 'healthy' ? '🟢' : status === 'degraded' ? '🟡' : '🔴';
+        const statusText = status === 'healthy' ? 'Active' : status === 'degraded' ? 'Degraded' : 'Silent';
+        const name = node.name || truncate(pubkey, 12);
+
+        const snrVal = stats.avgSnr;
+        const snrColor = snrVal != null ? (snrVal > 10 ? 'var(--status-green)' : snrVal > 0 ? 'var(--accent)' : snrVal > -5 ? 'var(--status-yellow)' : 'var(--status-red)') : '#6b7280';
+
+        return `<div class="my-node-card fav-node-card ${status}" data-key="${pubkey}" tabindex="0" role="button">
+          <div class="mnc-header">
+            <div class="mnc-status">${statusDot}</div>
+            <div class="mnc-name">${escapeHtml(name)}</div>
+            <div class="mnc-role">${node.role || '?'}</div>
+            <button class="mnc-remove fav-unfav-btn" data-key="${pubkey}" title="Remove from Favourites" aria-label="Unfavourite ${escapeAttr(name)}">★</button>
+          </div>
+          <div class="mnc-status-text">${statusText}${stats.lastHeard ? ' · ' + timeAgo(stats.lastHeard) : ''}</div>
+          <div class="mnc-metrics">
+            <div class="mnc-metric">
+              <div class="mnc-val">${stats.packetsToday ?? 0}</div>
+              <div class="mnc-lbl">Packets today</div>
+            </div>
+            <div class="mnc-metric">
+              <div class="mnc-val">${obs.length}</div>
+              <div class="mnc-lbl">Observers</div>
+            </div>
+            <div class="mnc-metric">
+              <div class="mnc-val" style="color:${snrColor}">${snrVal != null ? Number(snrVal).toFixed(1) + ' dB' : '—'}</div>
+              <div class="mnc-lbl">Avg SNR</div>
+            </div>
+          </div>
+          <div class="mnc-actions">
+            <button class="mnc-btn" data-action="health" data-key="${pubkey}">Full health →</button>
+            <button class="mnc-btn" data-action="packets" data-key="${pubkey}">View packets →</button>
+          </div>
+        </div>`;
+      } catch {
+        return `<div class="my-node-card fav-node-card silent" data-key="${pubkey}" tabindex="0" role="button">
+          <div class="mnc-header">
+            <div class="mnc-status">❓</div>
+            <div class="mnc-name">${escapeHtml(truncate(pubkey, 12))}</div>
+            <button class="mnc-remove fav-unfav-btn" data-key="${pubkey}" title="Remove from Favourites">★</button>
+          </div>
+          <div class="mnc-status-text">Could not load data</div>
+        </div>`;
+      }
+    }));
+
+    grid.innerHTML = cards.join('');
+
+    grid.querySelectorAll('.fav-unfav-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleFavorite(btn.dataset.key);
+        loadFavoriteNodes();
+      });
+    });
+
+    grid.querySelectorAll('.mnc-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (btn.dataset.action === 'health') loadHealth(btn.dataset.key);
+        if (btn.dataset.action === 'packets') goto('/packets/' + btn.dataset.key);
+      });
+    });
+
+    grid.querySelectorAll('.fav-node-card').forEach(card => {
       const handler = (e) => {
         if (e.target.closest('.mnc-remove') || e.target.closest('.mnc-btn')) return;
         loadHealth(card.dataset.key);

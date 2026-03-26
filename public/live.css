@@ -34,6 +34,7 @@
   border-radius: 10px;
   border: 1px solid var(--border);
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.04);
+  overflow: visible;
 }
 
 .live-title {
@@ -81,6 +82,9 @@
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--accent);
+  display: inline-block;
+  min-width: 3ch;
+  text-align: right;
 }
 
 .live-stat-pill.anim-pill span { color: var(--status-yellow); }
@@ -274,9 +278,33 @@
   color: var(--text-muted);
   align-items: center;
   margin-left: 8px;
+  overflow: visible;
 }
 .live-toggles label { display: flex; align-items: center; gap: 3px; cursor: pointer; white-space: nowrap; }
 .live-toggles input { margin: 0; }
+
+/* Toggle tooltips */
+.live-toggle-tip { position: relative; overflow: visible; }
+.live-toggle-tip::after {
+  content: attr(data-tip);
+  display: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%; transform: translateX(-50%);
+  width: 260px;
+  background: rgba(15,15,35,.97);
+  color: #e2e8f0;
+  border: 1px solid rgba(74,158,255,.4);
+  border-radius: 6px;
+  padding: 7px 12px;
+  font-size: 11px; font-weight: 400;
+  white-space: normal; text-align: left;
+  box-shadow: 0 6px 20px rgba(0,0,0,.6);
+  pointer-events: none;
+  z-index: 9999;
+  line-height: 1.5;
+}
+.live-toggle-tip:hover::after { display: block; }
 
 /* ---- Leaflet overrides for dark theme ---- */
 .live-page .leaflet-control-zoom a {

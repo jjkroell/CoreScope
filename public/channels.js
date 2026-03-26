@@ -528,7 +528,7 @@
         var ch2 = channels.find(function (c) { return c.hash === selectedHash; });
         var header = document.getElementById('chHeader');
         if (header && ch2) {
-          header.querySelector('.ch-header-text').textContent = (ch2.name || 'Channel ' + selectedHash) + ' — ' + messages.length + ' messages';
+          header.querySelector('.ch-header-text').textContent = ch2.name || 'Channel ' + selectedHash;
         }
         var msgEl = document.getElementById('chMessages');
         if (msgEl && autoScroll) scrollToTop();
@@ -604,7 +604,7 @@
       const time = ch.lastActivityMs ? formatSecondsAgo(Math.floor((Date.now() - ch.lastActivityMs) / 1000)) : '';
       const preview = ch.lastSender && ch.lastMessage
         ? `${ch.lastSender}: ${truncate(ch.lastMessage, 28)}`
-        : `${ch.messageCount} messages`;
+        : '';
       const sel = selectedHash === ch.hash ? ' selected' : '';
       return `<button class="ch-item${sel}" data-hash="${ch.hash}" type="button" role="option" aria-selected="${selectedHash === ch.hash ? 'true' : 'false'}" aria-label="${escapeHtml(name)}">
         <div class="ch-badge" style="background:${color};box-shadow:0 0 0 3px ${color}22" aria-hidden="true"><svg viewBox="0 0 100 100" style="width:22px;height:22px;"><circle cx="50" cy="50" r="44" fill="none" stroke="white" stroke-width="1" opacity="0.15"/><circle cx="50" cy="50" r="30" fill="none" stroke="white" stroke-width="1.2" opacity="0.25"/><g stroke="white" stroke-width="1.8" opacity="0.55" stroke-linecap="round"><line x1="50" y1="50" x2="80" y2="50"/><line x1="50" y1="50" x2="65" y2="76"/><line x1="50" y1="50" x2="35" y2="76"/><line x1="50" y1="50" x2="20" y2="50"/><line x1="50" y1="50" x2="35" y2="24"/><line x1="50" y1="50" x2="65" y2="24"/></g><g stroke="white" stroke-width="1.2" opacity="0.3" stroke-linecap="round"><line x1="80" y1="50" x2="65" y2="76"/><line x1="65" y1="76" x2="35" y2="76"/><line x1="35" y1="76" x2="20" y2="50"/><line x1="20" y1="50" x2="35" y2="24"/><line x1="35" y1="24" x2="65" y2="24"/><line x1="65" y1="24" x2="80" y2="50"/></g><g fill="white" opacity="0.8"><circle cx="80" cy="50" r="4.5"/><circle cx="65" cy="76" r="4.5"/><circle cx="35" cy="76" r="4.5"/><circle cx="20" cy="50" r="4.5"/><circle cx="35" cy="24" r="4.5"/><circle cx="65" cy="24" r="4.5"/></g><circle cx="50" cy="50" r="14" fill="white" opacity="0.92"/><circle cx="50" cy="50" r="6" fill="white" opacity="0.3"/></svg></div>
@@ -627,7 +627,7 @@
     const ch = channels.find(c => c.hash === hash);
     const name = ch?.name || `Channel ${hash}`;
     const header = document.getElementById('chHeader');
-    header.querySelector('.ch-header-text').textContent = `${name} — ${ch?.messageCount || 0} messages`;
+    header.querySelector('.ch-header-text').textContent = name;
 
     // On mobile, show the message view
     document.querySelector('.ch-layout')?.classList.add('ch-show-main');
