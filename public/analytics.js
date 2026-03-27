@@ -494,28 +494,28 @@
     el.innerHTML = `
       <div class="analytics-row">
         <div class="analytics-card flex-1">
+          <h3>🕸️ Top Repeaters</h3>
+          <p class="text-muted">Nodes appearing most in packet paths</p>
+          ${renderRepeaterTable(topo.topRepeaters)}
+        </div>
+        <div class="analytics-card flex-1">
+          <h3>🤝 Repeater Pair Heatmap</h3>
+          <p class="text-muted">Which repeaters frequently appear together in paths</p>
+          ${renderPairTable(topo.topPairs)}
+        </div>
+      </div>
+
+      <div class="analytics-row">
+        <div class="analytics-card flex-1">
           <h3>🔗 Hop Count Distribution</h3>
           <p class="text-muted">Number of repeater hops per packet</p>
-          ${barChart(topo.hopDistribution.map(h=>h.count), topo.hopDistribution.map(h=>h.hops), ['#3b82f6'])}
+          ${barChart(topo.hopDistribution.map(h=>h.count), topo.hopDistribution.map(h=>h.hops), ['#3b82f6'], 800, 140)}
           <div class="rf-stats">
             <span>Avg: <strong>${sf(topo.avgHops, 1)} hops</strong></span>
             <span>Median: <strong>${topo.medianHops}</strong></span>
             <span>Max: <strong>${topo.maxHops}</strong></span>
             <span>1-hop direct: <strong>${topo.hopDistribution[0]?.count || 0}</strong></span>
           </div>
-        </div>
-        <div class="analytics-card flex-1">
-          <h3>🕸️ Top Repeaters</h3>
-          <p class="text-muted">Nodes appearing most in packet paths</p>
-          ${renderRepeaterTable(topo.topRepeaters)}
-        </div>
-      </div>
-
-      <div class="analytics-row">
-        <div class="analytics-card flex-1">
-          <h3>🤝 Repeater Pair Heatmap</h3>
-          <p class="text-muted">Which repeaters frequently appear together in paths</p>
-          ${renderPairTable(topo.topPairs)}
         </div>
         <div class="analytics-card flex-1">
           <h3>📊 Hops vs SNR</h3>
@@ -686,24 +686,6 @@
   // ===================== CHANNELS =====================
   function renderChannels(el, ch) {
     el.innerHTML = `
-      <div class="analytics-card">
-        <h3>📻 Channel Activity</h3>
-        <p class="text-muted">${ch.activeChannels} active channels, ${ch.decryptable} decryptable</p>
-        <table class="analytics-table">
-          <thead><tr><th>Channel</th><th>Hash</th><th>Messages</th><th>Unique Senders</th><th>Last Activity</th><th>Decrypted</th></tr></thead>
-          <tbody>
-            ${ch.channels.map(c => `<tr class="clickable-row" data-action="navigate" data-value="/channels?ch=${c.hash}" tabindex="0" role="row">
-              <td><strong>${esc(c.name || 'Unknown')}</strong></td>
-              <td class="mono">${typeof c.hash === 'number' ? '0x' + c.hash.toString(16).toUpperCase().padStart(2, '0') : c.hash}</td>
-              <td>${c.messages}</td>
-              <td>${c.senders}</td>
-              <td>${timeAgo(c.lastActivity)}</td>
-              <td>${c.encrypted ? '🔒' : '✅'}</td>
-            </tr>`).join('')}
-          </tbody>
-        </table>
-      </div>
-
       <div class="analytics-row">
         <div class="analytics-card flex-1">
           <h3>💬 Messages / Hour by Channel</h3>
@@ -716,14 +698,29 @@
       </div>
 
       <div class="analytics-card">
-        <h3>📊 Message Length Distribution</h3>
-        ${ch.msgLengths.length ? histogram(ch.msgLengths, 20, '#8b5cf6').svg : '<div class="text-muted">No decrypted messages</div>'}
+        <h3>📻 Channel Activity</h3>
+        <p class="text-muted">${ch.activeChannels} active channels, ${ch.decryptable} decryptable</p>
+        <table class="analytics-table">
+          <thead><tr><th>Channel</th><th>Hash</th><th>Messages</th><th>Unique Senders</th><th>Last Activity</th><th>Decrypted</th></tr></thead>
+          <tbody>
+            ${ch.channels.filter(c => !c.encrypted && !/^ch[\d?]*$/i.test(c.name || '')).map(c => `<tr class="clickable-row" data-action="navigate" data-value="/channels?ch=${c.hash}" tabindex="0" role="row">
+              <td><strong>${esc(c.name || 'Unknown')}</strong></td>
+              <td class="mono">${typeof c.hash === 'number' ? '0x' + c.hash.toString(16).toUpperCase().padStart(2, '0') : c.hash}</td>
+              <td>${c.messages}</td>
+              <td>${c.senders}</td>
+              <td>${timeAgo(c.lastActivity)}</td>
+              <td>${c.encrypted ? '🔒' : '✅'}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
       </div>
     `;
   }
 
   function renderChannelTimeline(data) {
     if (!data.length) return '<div class="text-muted">No data</div>';
+    data = data.filter(d => !/^ch[\d?]*$/i.test(d.channel));
+    if (!data.length) return '<div class="text-muted">No decrypted channel data</div>';
     const hours = [...new Set(data.map(d => d.hour))].sort();
     const channels = [...new Set(data.map(d => d.channel))];
     const colors = ['#ef4444','#22c55e','#3b82f6','#f59e0b','#8b5cf6','#ec4899','#14b8a6','#64748b'];

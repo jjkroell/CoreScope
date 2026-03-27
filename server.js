@@ -801,8 +801,8 @@ for (const source of mqttSources) {
           timestamp: now,
           observer_id: observerId,
           observer_name: msg.origin || null,
-          snr: msg.SNR ?? null,
-          rssi: msg.RSSI ?? null,
+          snr: msg.SNR != null ? Number(msg.SNR) : null,
+          rssi: msg.RSSI != null ? Number(msg.RSSI) : null,
           hash: computeContentHash(msg.raw),
           route_type: decoded.header.routeType,
           payload_type: decoded.header.payloadType,
@@ -906,8 +906,8 @@ for (const source of mqttSources) {
             timestamp: now,
             observer_id: 'companion',
             observer_name: 'L1 Pro (BLE)',
-            snr: advert.SNR ?? advert.snr ?? null,
-            rssi: advert.RSSI ?? advert.rssi ?? null,
+            snr: advert.SNR != null ? Number(advert.SNR) : advert.snr != null ? Number(advert.snr) : null,
+            rssi: advert.RSSI != null ? Number(advert.RSSI) : advert.rssi != null ? Number(advert.rssi) : null,
             hash: 'advert',
             route_type: 1, // FLOOD
             payload_type: 4, // ADVERT
@@ -947,8 +947,8 @@ for (const source of mqttSources) {
           timestamp: now,
           observer_id: 'companion',
           observer_name: 'L1 Pro (BLE)',
-          snr: channelMsg.SNR ?? channelMsg.snr ?? null,
-          rssi: channelMsg.RSSI ?? channelMsg.rssi ?? null,
+          snr: channelMsg.SNR != null ? Number(channelMsg.SNR) : channelMsg.snr != null ? Number(channelMsg.snr) : null,
+          rssi: channelMsg.RSSI != null ? Number(channelMsg.RSSI) : channelMsg.rssi != null ? Number(channelMsg.rssi) : null,
           hash: channelHash,
           route_type: 1,
           payload_type: 5, // GRP_TXT
@@ -970,8 +970,8 @@ for (const source of mqttSources) {
           raw_hex: null,
           timestamp: dm.timestamp || now,
           observer_id: 'companion',
-          snr: dm.snr ?? null,
-          rssi: dm.rssi ?? null,
+          snr: dm.snr != null ? Number(dm.snr) : null,
+          rssi: dm.rssi != null ? Number(dm.rssi) : null,
           hash: null,
           route_type: 0,
           payload_type: 2, // TXT_MSG
@@ -1404,7 +1404,7 @@ app.get('/api/nodes/bulk-health', (req, res) => {
     for (const pkt of packets) {
       totalObservations += pkt.observation_count || 1;
       if (pkt.timestamp > todayISO) packetsToday++;
-      if (pkt.snr != null) { snrSum += pkt.snr; snrCount++; }
+      if (pkt.snr != null && isFinite(+pkt.snr)) { snrSum += +pkt.snr; snrCount++; }
       if (!lastHeard || pkt.timestamp > lastHeard) lastHeard = pkt.timestamp;
       if (pkt.observer_id) {
         if (!observers[pkt.observer_id]) {
@@ -2589,7 +2589,7 @@ app.get('/api/observers/:id', (req, res) => {
   const oneHourAgo = new Date(Date.now() - 3600000).toISOString();
   const obsPackets = pktStore.byObserver.get(id) || [];
   const packetsLastHour = obsPackets.filter(p => p.timestamp > oneHourAgo).length;
-  res.json({ ...obs, packetsLastHour });
+  res.json({ ...obs, packetsLastHour, hash_size: _hashSizeMap.get(id) || _hashSizeMap.get(id.toLowerCase()) || null });
 });
 
 // Observer analytics

@@ -407,6 +407,7 @@ window.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('click', (e) => {
     const link = e.target.closest('a[href]');
     if (link && link.origin === location.origin && !link.hasAttribute('download') && link.target !== '_blank') {
+      if ((link.getAttribute('href') || '').startsWith('#')) return; // fragment-only anchors (e.g. Leaflet popup close button)
       e.preventDefault();
       navLinks.classList.remove('open');
       goto(link.pathname + link.search);

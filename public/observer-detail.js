@@ -39,8 +39,8 @@
     app.innerHTML = `
       <div class="observer-detail-page" style="overflow-y:auto;height:calc(100vh - 56px);padding:16px">
         <div class="page-header" style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
-          <a href="/observers" class="btn-icon" title="Back to Observers" aria-label="Back">←</a>
-          <h2 style="margin:0" id="obsTitle">Observer Detail</h2>
+          <button class="detail-back-btn pill-btn" onclick="history.back()" aria-label="Back">← Back</button>
+          <h2 style="margin:0">Observer Details</h2>
           <div style="margin-left:auto;display:flex;gap:8px">
             <select id="obsDaysSelect" class="time-range-select" aria-label="Time range">
               <option value="1">24 Hours</option>
@@ -85,14 +85,11 @@
     const el = document.getElementById('obsDetailContent');
     if (!el) return;
 
-    const title = document.getElementById('obsTitle');
-    if (title) title.textContent = obs.name || obs.id.substring(0, 16) + '…';
-
     // Parse radio string
     let radioHtml = '—';
     if (obs.radio) {
       const rp = obs.radio.split(',');
-      radioHtml = rp[0] + ' MHz · SF' + (rp[2] || '?') + ' · BW' + (rp[1] || '?') + ' · CR' + (rp[3] || '?');
+      radioHtml = parseFloat(rp[0]).toFixed(3) + ' MHz · SF' + (rp[2] || '?') + ' · BW' + (rp[1] || '?') + ' · CR' + (rp[3] || '?');
     }
 
     // Health status
@@ -100,59 +97,72 @@
     const statusCls = ago < 600000 ? 'health-green' : ago < HEALTH_THRESHOLDS.nodeDegradedMs ? 'health-yellow' : 'health-red';
     const statusLabel = ago < 600000 ? 'Online' : ago < HEALTH_THRESHOLDS.nodeDegradedMs ? 'Stale' : 'Offline';
 
+    const obsColor = (window.ROLE_COLORS && ROLE_COLORS.observer) || '#8b5cf6';
     el.innerHTML = `
-      <div class="obs-info-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:20px">
-        <div class="stat-card">
-          <div class="stat-label">Status</div>
-          <div class="stat-value"><span class="health-dot ${statusCls}">●</span> ${statusLabel}</div>
+      <div class="node-full-card" style="padding:12px 16px;margin-bottom:16px">
+        <div class="node-detail-name" style="font-size:20px">${escapeHtml(obs.name || obs.id.substring(0, 16) + '…')}</div>
+        <div style="margin:4px 0 6px">
+          <span class="badge" style="background:${obsColor}20;color:${obsColor}">observer</span>
+          <span class="health-dot ${statusCls}" style="margin-left:6px"></span>
+          <span style="font-size:12px;color:var(--text-muted)">${statusLabel}</span>
         </div>
-        <div class="stat-card">
-          <div class="stat-label">Region</div>
-          <div class="stat-value">${obs.iata ? '<span class="badge-region">' + obs.iata + '</span>' : '—'}</div>
+        <div style="margin-bottom:4px">
+          <span style="display:inline-block;font-size:13px;font-weight:600;letter-spacing:.7px;color:var(--accent);text-transform:uppercase;background:color-mix(in srgb,var(--accent) 12%,transparent);border:1px solid color-mix(in srgb,var(--accent) 30%,transparent);padding:2px 7px;border-radius:99px;margin-bottom:4px">Public Key</span>
+          <span class="node-detail-key mono">${(() => {
+              const key = obs.id;
+              const prefixLen = (obs.hash_size || 0) * 2;
+              if (!prefixLen) return escapeHtml(key);
+              const prefix = key.slice(0, prefixLen).toUpperCase();
+              const rest = escapeHtml(key.slice(prefixLen));
+              return '<span class="hash-prefix-tip" style="color:var(--accent);font-weight:700;letter-spacing:.5px;cursor:default" data-tip="' + obs.hash_size + '-byte ID hash prefix">' + prefix + '</span>' + rest;
+            })()}</span>
         </div>
-        <div class="stat-card">
+        ${obs.iata ? `<div style="margin-top:6px">
+          <span style="display:inline-block;font-size:13px;font-weight:600;letter-spacing:.7px;color:#0891b2;text-transform:uppercase;background:color-mix(in srgb,#0891b2 12%,transparent);border:1px solid color-mix(in srgb,#0891b2 30%,transparent);padding:2px 7px;border-radius:99px;margin-right:6px">Region</span>
+          <span style="font-size:14px;font-weight:600">${obs.iata}</span>
+        </div>` : ''}
+      </div>
+      <div class="obs-info-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:12px;margin-bottom:20px">
+        <div class="stat-card" style="grid-column:span 2">
           <div class="stat-label">Model</div>
-          <div class="stat-value">${obs.model || '—'}</div>
+          <div class="stat-value">${obs.model ? obs.model.replace(/\s*\([^)]*\)\s*$/, '') : '—'}</div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card" style="grid-column:span 2">
           <div class="stat-label">Firmware</div>
-          <div class="stat-value" style="font-size:0.8em;word-break:break-all">${obs.firmware || '—'}</div>
+          <div class="stat-value">${obs.firmware ? obs.firmware.replace(/\s*\([^)]*\)\s*$/, '') : '—'}</div>
         </div>
-        <div class="stat-card">
-          <div class="stat-label">Client</div>
-          <div class="stat-value" style="font-size:0.8em;word-break:break-all">${obs.client_version || '—'}</div>
-        </div>
-        <div class="stat-card">
+        <div class="stat-card" style="grid-column:span 3">
           <div class="stat-label">Radio</div>
-          <div class="stat-value" style="font-size:0.85em">${radioHtml}</div>
+          <div class="stat-value">${radioHtml}</div>
         </div>
-        <div class="stat-card">
-          <div class="stat-label">Battery</div>
-          <div class="stat-value">${obs.battery_mv ? obs.battery_mv + ' mV' : '—'}</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Uptime</div>
-          <div class="stat-value">${formatDuration(obs.uptime_secs)}</div>
-        </div>
-        <div class="stat-card">
+        <div class="stat-card" style="grid-column:span 2">
           <div class="stat-label">Noise Floor</div>
           <div class="stat-value">${obs.noise_floor != null ? obs.noise_floor + ' dBm' : '—'}</div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card" style="grid-column:span 2">
+          <div class="stat-label">Client</div>
+          <div class="stat-value">${obs.client_version ? obs.client_version.replace(/meshcoretomqtt/gi, 'mctomqtt').replace(/-[a-f0-9]+$/i, '') : '—'}</div>
+        </div>
+        <div class="stat-card" style="grid-column:span 2">
+          <div class="stat-label">Battery</div>
+          <div class="stat-value">${obs.battery_mv ? obs.battery_mv + ' mV' : '—'}</div>
+        </div>
+        <div class="stat-card" style="grid-column:span 2">
+          <div class="stat-label">Uptime</div>
+          <div class="stat-value">${formatDuration(obs.uptime_secs)}</div>
+        </div>
+        <div class="stat-card" style="grid-column:span 2">
           <div class="stat-label">Total Packets</div>
           <div class="stat-value">${(obs.packet_count || 0).toLocaleString()}</div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card" style="grid-column:span 2">
           <div class="stat-label">Packets/Hour</div>
           <div class="stat-value">${(obs.packetsLastHour || 0).toLocaleString()}</div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card" style="grid-column:span 2">
           <div class="stat-label">First Seen</div>
-          <div class="stat-value" style="font-size:0.85em">${obs.first_seen ? new Date(obs.first_seen).toLocaleDateString() : '—'}</div>
+          <div class="stat-value">${obs.first_seen ? new Date(obs.first_seen).toLocaleDateString() : '—'}</div>
         </div>
-      </div>
-      <div class="mono" style="font-size:0.75em;color:var(--text-muted);margin-bottom:20px;word-break:break-all">
-        ID: ${obs.id}
       </div>
       <div class="obs-charts" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(400px,1fr));gap:16px">
         <div class="chart-card" style="padding:12px">
@@ -160,16 +170,16 @@
           <canvas id="obsTimeChart"></canvas>
         </div>
         <div class="chart-card" style="padding:12px">
-          <h3 style="margin:0 0 8px;font-size:0.95em">Packet Types</h3>
-          <div style="max-width:280px;margin:0 auto"><canvas id="obsTypeChart"></canvas></div>
+          <h3 style="margin:0 0 8px;font-size:0.95em">SNR Distribution</h3>
+          <canvas id="obsSnrChart"></canvas>
         </div>
         <div class="chart-card" style="padding:12px">
           <h3 style="margin:0 0 8px;font-size:0.95em">Unique Nodes Heard</h3>
           <canvas id="obsNodesChart"></canvas>
         </div>
         <div class="chart-card" style="padding:12px">
-          <h3 style="margin:0 0 8px;font-size:0.95em">SNR Distribution</h3>
-          <canvas id="obsSnrChart"></canvas>
+          <h3 style="margin:0 0 8px;font-size:0.95em">Packet Types</h3>
+          <div style="max-width:280px;margin:0 auto"><canvas id="obsTypeChart"></canvas></div>
         </div>
       </div>
       <div style="margin-top:20px">

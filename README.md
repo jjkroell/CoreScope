@@ -312,6 +312,200 @@ meshcore-analyzer/
     └── frontend-test.js     # Frontend smoke tests
 ```
 
+## Changelog
+
+### [Unreleased] — post-v2.6.0
+
+- **Responsive design** — layout improvements across all screen sizes
+- **Auto-linkify URLs** in channel messages — links open in a new tab
+- **Channel colors** — HSL golden-angle algorithm replaces palette-based colors, eliminating collisions; unread dot color matches channel badge
+- **Sender avatar colors** — toned down with darker border ring for readability
+- **Pulsing unread dot** — subtle animation on channel list when a new message arrives
+- **Analytics improvements** — packets/hour chart, payload type colors, RF analytics fixes
+- **UNK payload types** — all `UNK*` variants merged into a single `UNK` row in analytics
+- **Map lock/unlock** — prevent accidental map panning; back buttons on map detail views
+- **Path graph** — fits container on load, zooms on hover/touch
+- **Full-page packet detail** — redesigned layout with proper scroll, responsive columns, equal-height cards, and inline Packet Trace section
+- **Location anonymization** — configurable option to hide precise GPS coordinates
+- **Packet detail location** — shows GPS for ADVERTs, sender node lookup for channel texts
+- **Map link from packet detail** — 📍 navigates to `#/map?node=PUBKEY`, centers and opens popup
+- **Observer IATA regions** — displayed in packet detail, node detail, and live map panels
+- **Favorites system** — star nodes; live map favorites filter (packet-level, not just markers)
+- **Boundary polygon filter** — draw a polygon on the map to restrict all views to that region; persists across pages
+- **BC airport IATA codes** added; observer name display in packets table fixed
+- **`#wardriving` channel** permanently blocked from all pages
+- **Nav stats** — removed flash animation; numbers update silently
+- **Sticky column headers** — fixed across table scroll containers
+- **Node table** — sortable columns, public key as hover tooltip, role column next to name
+- **Observer page** — sortable columns added
+- **Packet ring animation** on live map reduced to less distracting size
+
+---
+
+### [2.6.0] — Audio Sonification, Regional Hop Filtering, Audio Lab
+
+#### 🔊 Mesh Audio Sonification
+Packets now have sound. Each packet's raw bytes become music through a modular voice engine:
+- Payload type → instrument + scale (ADVERTs: triangle/C major pentatonic; GRP_TXT: sine/A minor pentatonic; etc.)
+- Payload bytes → melody via evenly sampled bytes quantized to scale
+- Observation count → volume + chord voicing (up to 8 detuned voices via log₂ scaling)
+- Hop count → filter cutoff (more hops = more muffled, 800–8000 Hz lowpass)
+- Node longitude → stereo pan
+- BPM tempo slider for ambient ↔ techno feel
+- Modular voice architecture (`audio.js` engine + swappable voice modules)
+
+#### 🎵 Audio Lab (`#/audio-lab`)
+New page for understanding and debugging the audio engine:
+- Packet buckets by type — representative packets spanning size/observation ranges
+- Play/Loop/Speed controls (0.25× to 4×)
+- Sound Mapping panel — shows why each parameter has its value with formulas
+- Note Sequence table — every sampled byte → MIDI note → frequency → duration → gap
+- Real-time playback highlighting in hex dump, note rows, and byte visualizer
+- Byte Visualizer — bar chart of payload bytes, sampled bytes colored by type
+
+#### 🗺️ Regional Hop Filtering (#117)
+Fixes false cross-regional paths caused by 1-byte repeater ID collisions (0–255 global):
+- Layered filtering: GPS distance to IATA center → observer-based fallback → global fallback
+- 60+ IATA airport coordinates built in for geographic distance calculations
+- Per-observer resolution — packet list batch-resolves ambiguous hops via server API
+- Conflict popover — clickable ⚠ badges show all regional candidates with distances
+
+#### 🏷️ Region Dropdown (#116)
+- 150+ built-in IATA-to-city mappings — dropdown shows `SEA - Seattle, WA` automatically
+- Dropdown auto-sizes for longer labels, checkbox alignment, ellipsis overflow
+
+#### Fixes
+- Realistic mode secondary WS broadcast paths were missing `hash` field, bypassing the 5-second grouping buffer
+- Observation count passed correctly to sonification for volume/chord voicing
+- Packet list dedup via O(1) hash Map index (prevents duplicate rows)
+- Observer names in packet detail now load correctly on direct `#/packets/HASH` navigation
+- Time window bypassed for direct packet links — always shows the packet regardless of filter
+- CI: `docker rm -f` prevents stale container conflicts; `paths-ignore` skips deploy on docs-only changes
+
+---
+
+### [2.5.0] "Digital Rain" — 2026-03-22
+
+#### Matrix Mode — Full Cyberpunk Map Theme
+Toggle **Matrix** on the live map to transform the entire visualization:
+- Green phosphor CRT aesthetic — map tiles desaturated and re-tinted with `sepia → hue-rotate(70°) → saturate`
+- CRT scanline overlay with gentle flicker animation
+- Node markers dim to dark green (#008a22 at 50% opacity)
+- Forces dark mode while active; restores previous theme on toggle off
+- Disables heat map automatically (incompatible visual combo)
+- All UI panels themed — feed panel, VCR controls, node detail go green-on-black with monospace font
+
+#### Matrix Hex Flight — Packet Bytes on the Wire
+When Matrix mode is enabled, packet animations show actual hex bytes flowing along routes:
+- Real packet data from the `raw_hex` field — not random/generated
+- White leading byte with triple-layer green neon glow
+- Trailing bytes fade from bright to dim green, shrinking with distance from the head
+- 60fps animation via `requestAnimationFrame` with time-based interpolation (1.1s per hop)
+- 300ms fade-out after reaching destination
+
+#### Matrix Rain — Falling Packet Columns
+A separate **Rain** toggle adds canvas-rendered falling hex columns:
+- Each incoming packet spawns a column of its actual raw hex bytes
+- Fall distance proportional to hop count (4+ hops = full screen; 1 hop = barely drops)
+- Multiple observations of the same packet spawn multiple simultaneous columns (staggered 150ms apart)
+- Canvas-rendered at 60fps — no DOM overhead; handles hundreds of simultaneous drops
+- Replay support — ▶ Replay includes raw hex data so replayed packets produce rain
+
+#### Bug Fixes
+- Fixed null element errors in Matrix hex flight during fast VCR replay
+- Fixed animation null-guard cascade in `pulseNode`, `animatePath`, and `drawAnimatedLine`
+- Fixed WS broadcast null packet when observation was deduplicated
+- Fixed pause button crash that killed WS handler registration
+- Fixed multi-select menu close handler null-guard
+
+---
+
+### [2.4.1] — 2026-03-22 (Hotfix)
+
+- Fixed packet ingestion broken after legacy table removal (`insert()` returned undefined)
+- Fixed live packet updates: pause button `addEventListener` on null element crashed `init()`
+- Fixed pause button not toggling (event delegation scope fix)
+- Fixed WS broadcast null packet data on deduplicated observations
+- Fixed multi-select filter menu crash on null `observerFilterWrap`/`typeFilterWrap`
+- Fixed live map animation cleanup crash after page navigation (stale `setInterval`)
+
+---
+
+### [2.4.0] — 2026-03-22
+
+#### Added
+- Observation-level deeplinks (`#/packets/HASH?obs=OBSERVER_ID`)
+- Observation detail pane — click any child row for its specific data
+- Observation sort: Observer / Path / Time with persistent preference
+- Ungrouped mode — flattens all observations into individual rows
+- Distance/Range analytics tab with haversine calculations and "View on Map" buttons
+- Realistic packet propagation mode on live map with propagation time in detail pane
+- Replay sends all observations with realistic animation
+- Paths-through section on node detail (desktop + mobile)
+- Regional filters on all tabs (shared `RegionFilter` component)
+- Favorites filter on live map (packet-level)
+- Configurable map defaults via `config.json`
+- Hash prefix labels on map with spiral deconfliction + callout lines
+- Channel rainbow table (pre-computed keys for common names)
+- Zero-API live channel updates via WebSocket
+- Channel message dedup by packet hash
+- Channel name tags (blue pill) in packet detail column
+- Shareable channel URLs (`#/channels/HASH`)
+- API key required for POST endpoints
+- HTTPS support (lincomatic PR #105)
+- Graceful shutdown (lincomatic PR #109)
+- Multi-select Observer and Type filters (checkbox dropdowns, OR logic)
+- Hex Paths toggle: show raw hex hash prefixes vs resolved node names
+- Time window selector (15min/30min/1h/3h/6h/12h/24h/All)
+- Pause/resume button (⏸/▶) for live WebSocket updates with buffered packet count
+- `localStorage` persistence for all filter/view preferences
+
+#### Changed
+- Channel keys: `hashChannels` for auto-derived SHA256 keys
+- Node region filtering uses ADVERT-based index (accurate local presence)
+- Max hop distance filter: 1000 km → 300 km (LoRa record ~250 km)
+- Channels page hides encrypted messages, shows only decrypted
+- Observer/Type filters are pure client-side (no API calls on filter change)
+- Packet loading is time-window based (`since`) instead of fixed count limit
+
+#### Removed
+- Legacy `packets` and `paths` database tables (auto-migrated on startup)
+- Redundant server-side type/observer filtering
+
+#### Performance
+- `/api/analytics/distance`: 3 s → 630 ms
+- `/api/analytics/topology`: 289 ms → 193 ms
+- `/api/observers`: 3 s → 130 ms
+- `/api/nodes`: 50 ms → 2 ms (precomputed hash_size)
+- Event loop max: 3.2 s → 903 ms (startup only)
+- Pre-warm yields event loop via `setImmediate`
+- SQLite manual PASSIVE checkpointing
+
+---
+
+### [2.3.0] — 2026-03-20
+
+#### Added
+- **Packet Deduplication** — normalized storage with `transmissions` and `observations` tables; packets seen by multiple observers stored once with linked observation records
+- Observation count badges (👁) in packets page
+- `?expand=observations` API query param for full observation details
+- `totalTransmissions` / `totalObservations` in health and analytics APIs
+- Migration script: `scripts/migrate-dedup.js`
+- Live map deeplinks — node detail panel links to full node detail, observer detail, and filtered packets
+- CI validation: `setup-node` added to deploy workflow for JS syntax checking
+
+#### Changed
+- In-memory packet store restructured around transmissions with observation indexes
+- Packets API returns unique transmissions by default (was returning inflated observation rows)
+- Home page shows "Transmissions" instead of "Packets" for network stats
+- WebSocket broadcasts include `observation_count`
+
+#### Performance
+- **8.19× dedup ratio on production** (117K observations → 14K transmissions)
+- RAM usage reduced proportionally
+
+---
+
 ## License
 
 MIT

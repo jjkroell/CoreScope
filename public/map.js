@@ -9,7 +9,7 @@
   let nodes = [];
   let targetNodeKey = null;
   let observers = [];
-  let filters = { repeater: true, companion: true, room: true, sensor: true, observer: true, lastHeard: '30d', neighbors: false, clusters: false, hashLabels: localStorage.getItem('meshcore-map-hash-labels') !== 'false', statusFilter: localStorage.getItem('meshcore-map-status-filter') || 'all' };
+  let filters = { repeater: true, companion: true, room: true, sensor: true, observer: true, lastHeard: '30d', hashSize1: true, hashSize2: true, hashSize3: true, hashLabels: localStorage.getItem('meshcore-map-hash-labels') !== 'false', statusFilter: localStorage.getItem('meshcore-map-status-filter') || 'all' };
   let wsHandler = null;
   let heatLayer = null;
   let userHasMoved = false;
@@ -94,7 +94,6 @@
           </fieldset>
           <fieldset class="mc-section">
             <legend class="mc-label">Display</legend>
-            <label for="mcClusters"><input type="checkbox" id="mcClusters"> Show clusters</label>
             <label for="mcHeatmap"><input type="checkbox" id="mcHeatmap"> Heat map</label>
             <label for="mcHashLabels"><input type="checkbox" id="mcHashLabels"> Hash prefix labels</label>
             <label for="mcBoundaryShow"><input type="checkbox" id="mcBoundaryShow"> Show boundary</label>
@@ -109,7 +108,9 @@
           </fieldset>
           <fieldset class="mc-section">
             <legend class="mc-label">Filters</legend>
-            <label for="mcNeighbors"><input type="checkbox" id="mcNeighbors"> Show direct neighbors</label>
+            <label for="mcHashSize1"><input type="checkbox" id="mcHashSize1"> 1-byte hash ID</label>
+            <label for="mcHashSize2"><input type="checkbox" id="mcHashSize2"> 2-byte hash ID</label>
+            <label for="mcHashSize3"><input type="checkbox" id="mcHashSize3"> 3-byte hash ID</label>
           </fieldset>
           <fieldset class="mc-section">
             <legend class="mc-label">Last Heard</legend>
@@ -213,11 +214,15 @@
     });
 
     // Bind controls
-    document.getElementById('mcClusters').addEventListener('change', e => { filters.clusters = e.target.checked; renderMarkers(); });
     const heatEl = document.getElementById('mcHeatmap');
     if (localStorage.getItem('meshcore-map-heatmap') === 'true') { heatEl.checked = true; }
     heatEl.addEventListener('change', e => { localStorage.setItem('meshcore-map-heatmap', e.target.checked); toggleHeatmap(e.target.checked); });
-    document.getElementById('mcNeighbors').addEventListener('change', e => { filters.neighbors = e.target.checked; renderMarkers(); });
+    document.getElementById('mcHashSize1').checked = filters.hashSize1;
+    document.getElementById('mcHashSize2').checked = filters.hashSize2;
+    document.getElementById('mcHashSize3').checked = filters.hashSize3;
+    document.getElementById('mcHashSize1').addEventListener('change', e => { filters.hashSize1 = e.target.checked; renderMarkers(); });
+    document.getElementById('mcHashSize2').addEventListener('change', e => { filters.hashSize2 = e.target.checked; renderMarkers(); });
+    document.getElementById('mcHashSize3').addEventListener('change', e => { filters.hashSize3 = e.target.checked; renderMarkers(); });
 
     // Hash Labels toggle
     const hashLabelEl = document.getElementById('mcHashLabels');
@@ -621,6 +626,11 @@
     const filtered = nodes.filter(n => {
       if (!n.lat || !n.lon) return false;
       if (!filters[n.role || 'companion']) return false;
+      // Hash ID size filter
+      const hs = n.hash_size || 1;
+      if (hs === 1 && !filters.hashSize1) return false;
+      if (hs === 2 && !filters.hashSize2) return false;
+      if (hs >= 3 && !filters.hashSize3) return false;
       // Status filter
       if (filters.statusFilter !== 'all') {
         const role = (n.role || 'companion').toLowerCase();
@@ -720,9 +730,9 @@
 
     return `
       <div class="map-popup" style="font-family:var(--font);min-width:180px;">
-        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+        <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px;">
+          <button class="fav-star node-fav map-fav-btn${isFavorite(node.public_key) ? ' on' : ''}" data-fav="${safeEsc(node.public_key)}" title="${isFavorite(node.public_key) ? 'Remove from favourites' : 'Add to favourites'}" style="background:none;border:none;cursor:pointer;font-size:16px;padding:0;line-height:1;flex-shrink:0;">${isFavorite(node.public_key) ? '★' : '☆'}</button>
           <h3 style="font-weight:700;font-size:14px;margin:0;flex:1;">${safeEsc(node.name || 'Unknown')}</h3>
-          <button class="fav-star node-fav map-fav-btn" data-fav="${safeEsc(node.public_key)}" title="${isFavorite(node.public_key) ? 'Remove from favourites' : 'Add to favourites'}" style="background:none;border:none;cursor:pointer;font-size:18px;padding:0;line-height:1;flex-shrink:0;color:var(--accent);">${isFavorite(node.public_key) ? '★' : '☆'}</button>
         </div>
         ${roleBadge}
         <dl style="margin-top:8px;font-size:12px;">
