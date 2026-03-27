@@ -1009,8 +1009,6 @@ button.ch-item.selected .ch-badge {
 .data-table tbody tr { border-left: 3px solid transparent; transition: border-color 0.15s, background 0.15s; }
 .data-table tbody tr:hover { border-left-color: var(--accent); }
 
-.badge { transition: transform 0.15s ease; }
-.badge:hover { transform: scale(1.05); }
 
 @keyframes slideInRight { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 .panel-right:not(.empty) { animation: slideInRight 200ms ease-out; }
@@ -1277,8 +1275,7 @@ button.ch-item.ch-item-encrypted .ch-badge { filter: grayscale(0.6); }
   margin-bottom: 12px; border: 1px solid var(--border);
 }
 .node-full-card h4 { margin: 0 0 10px; font-size: 14px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; }
-.node-full-card .badge { transition: none; font-size: 13px; }
-.node-full-card .badge:hover { transform: none; }
+.node-full-card .badge { font-size: 13px; }
 /* Hash prefix custom tooltip */
 .hash-prefix-tip { position: relative; }
 .hash-prefix-tip::after {
