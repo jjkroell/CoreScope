@@ -166,6 +166,9 @@
   const CHANNEL_COLORS = [
     '#1d4ed8', '#b91c1c', '#15803d', '#b45309', '#7e22ce',
     '#0e7490', '#a16207', '#0f766e', '#be185d', '#1e40af',
+    '#c2410c', '#0369a1', '#166534', '#92400e', '#6b21a8',
+    '#0c4a6e', '#713f12', '#134e4a', '#9d174d', '#1e3a8a',
+    '#7f1d1d', '#14532d', '#1e1b4b', '#4c0519', '#042f2e',
   ];
   // Sender name colors — must be readable on --card-bg (light: ~#fff, dark: ~#1e293b)
   // Using CSS vars via inline style would be ideal, but these are reasonable middle-ground
@@ -601,7 +604,7 @@
         <div class="ch-badge" style="background:${color};box-shadow:0 0 0 3px ${color}22" aria-hidden="true"><svg viewBox="0 0 100 100" style="width:22px;height:22px;"><circle cx="50" cy="50" r="44" fill="none" stroke="white" stroke-width="1" opacity="0.15"/><circle cx="50" cy="50" r="30" fill="none" stroke="white" stroke-width="1.2" opacity="0.25"/><g stroke="white" stroke-width="1.8" opacity="0.55" stroke-linecap="round"><line x1="50" y1="50" x2="80" y2="50"/><line x1="50" y1="50" x2="65" y2="76"/><line x1="50" y1="50" x2="35" y2="76"/><line x1="50" y1="50" x2="20" y2="50"/><line x1="50" y1="50" x2="35" y2="24"/><line x1="50" y1="50" x2="65" y2="24"/></g><g stroke="white" stroke-width="1.2" opacity="0.3" stroke-linecap="round"><line x1="80" y1="50" x2="65" y2="76"/><line x1="65" y1="76" x2="35" y2="76"/><line x1="35" y1="76" x2="20" y2="50"/><line x1="20" y1="50" x2="35" y2="24"/><line x1="35" y1="24" x2="65" y2="24"/><line x1="65" y1="24" x2="80" y2="50"/></g><g fill="white" opacity="0.8"><circle cx="80" cy="50" r="4.5"/><circle cx="65" cy="76" r="4.5"/><circle cx="35" cy="76" r="4.5"/><circle cx="20" cy="50" r="4.5"/><circle cx="35" cy="24" r="4.5"/><circle cx="65" cy="24" r="4.5"/></g><circle cx="50" cy="50" r="14" fill="white" opacity="0.92"/><circle cx="50" cy="50" r="6" fill="white" opacity="0.3"/></svg></div>
         <div class="ch-item-body">
           <div class="ch-item-top">
-            <span class="ch-item-name">${escapeHtml(name)}${ch.unread && selectedHash !== ch.hash ? '<span class="ch-unread-dot" aria-label="New messages"></span>' : ''}</span>
+            <span class="ch-item-name">${escapeHtml(name)}${ch.unread && selectedHash !== ch.hash ? `<span class="ch-unread-dot" aria-label="New messages" style="background:${color}"></span>` : ''}</span>
             <span class="ch-item-time" data-channel-hash="${ch.hash}">${time}</span>
           </div>
           <div class="ch-item-preview">${escapeHtml(preview)}</div>
