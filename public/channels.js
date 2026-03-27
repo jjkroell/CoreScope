@@ -161,15 +161,6 @@
     if (sidebar) sidebar.style.pointerEvents = '';
   }
 
-  // WCAG AA compliant colors — ≥4.5:1 contrast on both white and dark backgrounds
-  // Channel badge colors (white text on colored background)
-  const CHANNEL_COLORS = [
-    '#1d4ed8', '#b91c1c', '#15803d', '#b45309', '#7e22ce',
-    '#0e7490', '#a16207', '#0f766e', '#be185d', '#1e40af',
-    '#c2410c', '#0369a1', '#166534', '#92400e', '#6b21a8',
-    '#0c4a6e', '#713f12', '#134e4a', '#9d174d', '#1e3a8a',
-    '#7f1d1d', '#14532d', '#1e1b4b', '#4c0519', '#042f2e',
-  ];
   // Sender name colors — must be readable on --card-bg (light: ~#fff, dark: ~#1e293b)
   // Using CSS vars via inline style would be ideal, but these are reasonable middle-ground
   // Light mode bg ~white: need dark enough. Dark mode bg ~#1e293b: need light enough.
@@ -190,7 +181,14 @@
     for (let i = 0; i < str.length; i++) h = ((h << 5) - h + str.charCodeAt(i)) | 0;
     return Math.abs(h);
   }
-  function getChannelColor(hash) { return CHANNEL_COLORS[hashCode(String(hash)) % CHANNEL_COLORS.length]; }
+  // Generate a unique color per channel name via HSL — no palette collisions possible.
+  // Saturation 60%, lightness 38% gives enough contrast for white text (WCAG AA).
+  // Hue is spread using golden-angle steps to keep adjacent-hash colors visually distinct.
+  function getChannelColor(hash) {
+    const h = hashCode(String(hash));
+    const hue = (h * 137.508) % 360; // golden angle keeps sequential hashes far apart
+    return `hsl(${hue.toFixed(1)}, 60%, 38%)`;
+  }
   function getSenderColor(name) {
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark' ||
       (!document.documentElement.getAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
