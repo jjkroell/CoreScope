@@ -274,7 +274,6 @@
   }
 
   function renderPayloadPie(types) {
-    const total = types.reduce((s, t) => s + t.count, 0);
     // Matches TYPE_COLORS in live.js
     const TYPE_COLOR_MAP = {
       ADVERT:   '#22c55e',
@@ -290,8 +289,19 @@
     };
     const fallbacks = ['#8b5cf6','#f97316','#64748b','#84cc16','#ef4444'];
     let fallbackIdx = 0;
-    let html = '<div class="payload-bars">';
+
+    // Merge all UNK* types into a single row
+    const merged = [];
+    let unkCount = 0;
     types.forEach(t => {
+      if (t.name.startsWith('UNK')) unkCount += t.count;
+      else merged.push(t);
+    });
+    if (unkCount > 0) merged.push({ name: 'UNK', count: unkCount });
+
+    const total = merged.reduce((s, t) => s + t.count, 0);
+    let html = '<div class="payload-bars">';
+    merged.forEach(t => {
       const color = TYPE_COLOR_MAP[t.name] || fallbacks[fallbackIdx++ % fallbacks.length];
       const pct = (t.count / total * 100).toFixed(1);
       const w = Math.max(t.count / total * 100, 1);
