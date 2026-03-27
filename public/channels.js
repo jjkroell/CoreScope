@@ -161,39 +161,23 @@
     if (sidebar) sidebar.style.pointerEvents = '';
   }
 
-  // Sender name colors — must be readable on --card-bg (light: ~#fff, dark: ~#1e293b)
-  // Using CSS vars via inline style would be ideal, but these are reasonable middle-ground
-  // Light mode bg ~white: need dark enough. Dark mode bg ~#1e293b: need light enough.
-  // Solution: use medium-bright saturated colors that work on both.
-  const SENDER_COLORS_LIGHT = [
-    '#16a34a', '#2563eb', '#db2777', '#ca8a04', '#7c3aed',
-    '#0d9488', '#ea580c', '#c026d3', '#0284c7', '#dc2626',
-    '#059669', '#4f46e5', '#e11d48', '#d97706', '#9333ea',
-  ];
-  const SENDER_COLORS_DARK = [
-    '#4ade80', '#60a5fa', '#f472b6', '#facc15', '#a78bfa',
-    '#2dd4bf', '#fb923c', '#e879f9', '#38bdf8', '#f87171',
-    '#34d399', '#818cf8', '#fb7185', '#fbbf24', '#c084fc',
-  ];
-
   function hashCode(str) {
     let h = 0;
     for (let i = 0; i < str.length; i++) h = ((h << 5) - h + str.charCodeAt(i)) | 0;
     return Math.abs(h);
   }
-  // Generate a unique color per channel name via HSL — no palette collisions possible.
-  // Saturation 60%, lightness 38% gives enough contrast for white text (WCAG AA).
-  // Hue is spread using golden-angle steps to keep adjacent-hash colors visually distinct.
-  function getChannelColor(hash) {
-    const h = hashCode(String(hash));
-    const hue = (h * 137.508) % 360; // golden angle keeps sequential hashes far apart
-    return `hsl(${hue.toFixed(1)}, 60%, 38%)`;
+  // Unique color from hash via golden-angle HSL — no palette, no collisions.
+  // Channel badges: lightness 38% for white text contrast (WCAG AA).
+  // Sender names: lightness varies by theme — darker for light bg, lighter for dark bg.
+  function _hslFromHash(str, saturation, lightness) {
+    const hue = (hashCode(String(str)) * 137.508) % 360;
+    return `hsl(${hue.toFixed(1)}, ${saturation}%, ${lightness}%)`;
   }
+  function getChannelColor(hash) { return _hslFromHash(hash, 60, 38); }
   function getSenderColor(name) {
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark' ||
       (!document.documentElement.getAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    const palette = isDark ? SENDER_COLORS_DARK : SENDER_COLORS_LIGHT;
-    return palette[hashCode(String(name)) % palette.length];
+    return _hslFromHash(name, 65, isDark ? 68 : 38);
   }
 
   function escapeHtml(str) {
