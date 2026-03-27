@@ -1825,7 +1825,6 @@ tr[data-hops]:hover { background: rgba(59,130,246,0.1); }
   background: color-mix(in srgb, var(--accent) 15%, transparent);
   border-color: color-mix(in srgb, var(--accent) 50%, transparent);
   color: var(--accent);
-  transition: background .15s, border-color .15s, color .15s;
 }
 .detail-back-btn.pill-btn:hover {
   background: var(--accent);
@@ -1935,7 +1934,7 @@ tr[data-hops]:hover { background: rgba(59,130,246,0.1); }
 .region-pill {
   display: inline-flex; align-items: center; padding: 4px 12px; border-radius: 16px;
   font-size: 12px; font-weight: 500; cursor: pointer; border: 1.5px solid var(--border);
-  background: transparent; color: var(--text-muted); transition: all 0.15s; white-space: nowrap;
+  background: transparent; color: var(--text-muted); white-space: nowrap;
 }
 .ch-sidebar .region-pill { padding: 3px 8px; font-size: 11px; }
 .region-pill:hover { border-color: var(--accent); color: var(--accent); }
