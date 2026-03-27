@@ -26,19 +26,24 @@
     return `<svg viewBox="0 0 ${w} ${h}" style="width:${w}px;height:${h}px" role="img" aria-label="Sparkline showing trend of ${data.length} data points"><title>Sparkline showing trend of ${data.length} data points</title><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.5"/></svg>`;
   }
 
-  function barChart(data, labels, colors, w = 800, h = 220, pad = 40) {
+  function barChart(data, labels, colors, w = 800, h = 220, pad = 40, padRight = null, stretch = false) {
+    const pl = pad;
+    const pr = padRight !== null ? padRight : pad;
+    // Vertical padding always uses `pad` so bottom labels stay inside the viewBox
     const max = Math.max(...data, 1);
-    const barW = Math.min((w - pad * 2) / data.length - 2, 30);
-    let svg = `<svg viewBox="0 0 ${w} ${h}" style="width:100%;max-height:${h}px" role="img" aria-label="Bar chart showing data distribution"><title>Bar chart showing data distribution</title>`;
+    const barW = Math.max(1, (w - pl - pr) / data.length - 2);
+    const svgStyle = stretch ? `display:block;width:100%;height:${h}px` : `width:100%;max-height:${h}px`;
+    const preserveAR = stretch ? 'none' : 'xMidYMid meet';
+    let svg = `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="${preserveAR}" style="${svgStyle}" role="img" aria-label="Bar chart showing data distribution"><title>Bar chart showing data distribution</title>`;
     // Grid
     for (let i = 0; i <= 4; i++) {
       const y = pad + (h - pad * 2) * i / 4;
       const val = Math.round(max * (4 - i) / 4);
-      svg += `<line x1="${pad}" y1="${y}" x2="${w-pad}" y2="${y}" stroke="var(--border)" stroke-dasharray="2"/>`;
-      svg += `<text x="${pad-4}" y="${y+4}" text-anchor="end" font-size="10" fill="var(--text-muted)">${val}</text>`;
+      svg += `<line x1="${pl}" y1="${y}" x2="${w-pr}" y2="${y}" stroke="var(--border)" stroke-dasharray="2"/>`;
+      svg += `<text x="${pl-4}" y="${y+4}" text-anchor="end" font-size="10" fill="var(--text-muted)">${val}</text>`;
     }
     data.forEach((v, i) => {
-      const x = pad + i * ((w - pad * 2) / data.length) + barW / 2;
+      const x = pl + i * ((w - pl - pr) / data.length) + barW / 2;
       const bh = (v / max) * (h - pad * 2);
       const y = h - pad - bh;
       const c = typeof colors === 'string' ? colors : colors[i % colors.length];
@@ -251,7 +256,7 @@
       <div class="analytics-row">
         <div class="analytics-card flex-1">
           <h3>📈 Packets / Hour</h3>
-          ${barChart(rf.packetsPerHour.map(h=>h.count), rf.packetsPerHour.map(h=>h.hour.slice(11)+'h'), 'var(--accent)')}
+          ${(() => { const ph = rf.packetsPerHour.slice(-48); return barChart(ph.map(h=>h.count), ph.map(h=>h.hour.slice(11)+'h'), 'var(--accent)', 800, 300, 30, 6, true); })()}
         </div>
       </div>
 
@@ -270,14 +275,29 @@
 
   function renderPayloadPie(types) {
     const total = types.reduce((s, t) => s + t.count, 0);
-    const colors = ['#ef4444','#f59e0b','#22c55e','#3b82f6','#8b5cf6','#ec4899','#14b8a6','#64748b','#f97316','#06b6d4','#84cc16'];
+    // Matches TYPE_COLORS in live.js
+    const TYPE_COLOR_MAP = {
+      ADVERT:   '#22c55e',
+      GRP_TXT:  '#3b82f6',
+      TXT_MSG:  '#f59e0b',
+      ACK:      '#6b7280',
+      REQ:      '#a855f7',
+      REQUEST:  '#a855f7',
+      ANON_REQ: '#a855f7',
+      RESPONSE: '#06b6d4',
+      TRACE:    '#ec4899',
+      PATH:     '#14b8a6',
+    };
+    const fallbacks = ['#8b5cf6','#f97316','#64748b','#84cc16','#ef4444'];
+    let fallbackIdx = 0;
     let html = '<div class="payload-bars">';
-    types.forEach((t, i) => {
+    types.forEach(t => {
+      const color = TYPE_COLOR_MAP[t.name] || fallbacks[fallbackIdx++ % fallbacks.length];
       const pct = (t.count / total * 100).toFixed(1);
       const w = Math.max(t.count / total * 100, 1);
       html += `<div class="payload-bar-row">
-        <div class="payload-bar-label"><span class="legend-dot" style="background:${colors[i]}"></span>${t.name}</div>
-        <div class="hash-bar-track"><div class="hash-bar-fill" style="width:${w}%;background:${colors[i]}"></div></div>
+        <div class="payload-bar-label"><span class="legend-dot" style="background:${color}"></span>${t.name}</div>
+        <div class="hash-bar-track"><div class="hash-bar-fill" style="width:${w}%;background:${color}"></div></div>
         <div class="payload-bar-value">${t.count} <span class="text-muted">(${pct}%)</span></div>
       </div>`;
     });
