@@ -1789,6 +1789,116 @@
     }
   });
 
+  // ── Trace helpers for full-page packet detail ──────────────────────────
+  function _traceObsLink(t) {
+    const label = escapeHtml(t.observer_name || (t.observer && t.observer.length > 16 ? t.observer.slice(0, 12) + '…' : t.observer) || '—');
+    return t.observer ? `<a href="/observers/${encodeURIComponent(t.observer)}" style="color:var(--accent);text-decoration:none">${label}</a>` : label;
+  }
+
+  function _tracePathGraph(allPaths) {
+    const nodeSet = new Set(['Origin', 'Dest']);
+    const edgeMap = new Map();
+    for (const { hops, observer } of allPaths) {
+      const chain = ['Origin', ...hops, 'Dest'];
+      for (let i = 0; i < chain.length - 1; i++) {
+        nodeSet.add(chain[i]); nodeSet.add(chain[i + 1]);
+        const key = chain[i] + '→' + chain[i + 1];
+        if (!edgeMap.has(key)) edgeMap.set(key, new Set());
+        edgeMap.get(key).add(observer);
+      }
+    }
+    const order = new Map([['Origin', 0]]);
+    let maxCol = 0;
+    for (const { hops } of allPaths) {
+      ['Origin', ...hops, 'Dest'].forEach((n, i) => { if (!order.has(n)) order.set(n, i); maxCol = Math.max(maxCol, i); });
+    }
+    order.set('Dest', maxCol);
+    const colGroups = new Map();
+    for (const [n, col] of order) { if (!colGroups.has(col)) colGroups.set(col, []); colGroups.get(col).push(n); }
+    const colCount = maxCol + 1;
+    const svgW = Math.max(500, colCount * 140);
+    const maxRows = Math.max(...[...colGroups.values()].map(g => g.length));
+    const svgH = Math.max(100, maxRows * 60 + 40);
+    const colSpacing = svgW / (colCount + 1);
+    const nodePos = new Map();
+    for (const [col, group] of colGroups) {
+      const rowSpacing = svgH / (group.length + 1);
+      group.forEach((n, i) => nodePos.set(n, { x: (col + 1) * colSpacing, y: (i + 1) * rowSpacing }));
+    }
+    const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
+    const obsColor = new Map(); let ci = 0;
+    for (const s of edgeMap.values()) for (const o of s) if (!obsColor.has(o)) obsColor.set(o, colors[ci++ % colors.length]);
+    let edgesSvg = '', nodesSvg = '';
+    for (const [key, obs] of edgeMap) {
+      const [from, to] = key.split('→');
+      const p1 = nodePos.get(from), p2 = nodePos.get(to);
+      if (!p1 || !p2) continue;
+      const obsArr = [...obs], color = obsColor.get(obsArr[0]) || '#6b7280';
+      const title = obsArr.length > 1 ? `${obsArr.length} observers: ${obsArr.join(', ')}` : obsArr[0];
+      edgesSvg += `<line x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}" stroke="${color}" stroke-width="${Math.min(obsArr.length, 6)}" stroke-opacity="0.6"><title>${escapeHtml(title)}</title></line>`;
+      const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x), al = 8;
+      const ax = p2.x - 20 * Math.cos(angle), ay = p2.y - 20 * Math.sin(angle);
+      edgesSvg += `<polygon points="${ax},${ay} ${ax - al * Math.cos(angle - 0.4)},${ay - al * Math.sin(angle - 0.4)} ${ax - al * Math.cos(angle + 0.4)},${ay - al * Math.sin(angle + 0.4)}" fill="${color}" opacity="0.8"/>`;
+    }
+    for (const [n, pos] of nodePos) {
+      const ep = n === 'Origin' || n === 'Dest';
+      nodesSvg += `<circle cx="${pos.x}" cy="${pos.y}" r="${ep ? 18 : 14}" fill="${ep ? 'var(--accent,#3b82f6)' : 'var(--surface-2,#374151)'}" stroke="${ep ? 'var(--accent,#3b82f6)' : 'var(--border,#4b5563)'}" stroke-width="2"/>`;
+      nodesSvg += `<text x="${pos.x}" y="${pos.y + 4}" text-anchor="middle" fill="white" font-size="${ep ? 10 : 9}" font-weight="${ep ? 700 : 500}">${escapeHtml(n)}</text>`;
+    }
+    const uniquePaths = [...new Set(allPaths.map(p => p.hops.join('→')))];
+    const legend = uniquePaths.length > 1
+      ? `${uniquePaths.length} unique paths observed by ${allPaths.length} observer${allPaths.length !== 1 ? 's' : ''}`
+      : `${allPaths[0].hops.length} hop${allPaths[0].hops.length !== 1 ? 's' : ''} in relay path`;
+    return `<div class="trace-section"><h3>Path Graph</h3><div style="overflow-x:auto"><svg width="${svgW}" height="${svgH}" style="display:block;margin:0 auto">${edgesSvg}${nodesSvg}</svg></div><div class="trace-path-info">${legend}</div></div>`;
+  }
+
+  function _traceTimeline(traceData, t0, spreadMs) {
+    const barWidth = spreadMs > 0 ? spreadMs : 1;
+    const rows = traceData.map(t => {
+      const offsetMs = t0 !== null ? new Date(t.time).getTime() - t0 : 0;
+      const pct = spreadMs > 0 ? (offsetMs / barWidth) * 100 : 50;
+      const snrClass = t.snr != null ? (t.snr >= 0 ? 'good' : t.snr >= -10 ? 'ok' : 'bad') : '';
+      return `<div class="tl-row">
+        <div class="tl-observer">${_traceObsLink(t)}</div>
+        <div class="tl-bar-container"><div class="tl-marker" style="left:${pct}%" title="${new Date(t.time).toISOString()}"></div></div>
+        <div class="tl-delta mono">${spreadMs > 0 ? '+' + (offsetMs / 1000).toFixed(3) + 's' : ''}</div>
+        <div class="tl-snr ${snrClass}">${t.snr != null ? Number(t.snr).toFixed(1) + ' dB' : '—'}</div>
+        <div class="tl-rssi">${t.rssi != null ? Number(t.rssi).toFixed(0) + ' dBm' : '—'}</div>
+      </div>`;
+    });
+    return `<div class="trace-section"><h3>Propagation Timeline</h3><div class="tl-header"><span>Observer</span><span>Time</span><span>Δ</span><span>SNR</span><span>RSSI</span></div>${rows.join('')}</div>`;
+  }
+
+  async function _loadTraceCard(card, hash, pkt) {
+    try {
+      const traceResp = await api(`/traces/${encodeURIComponent(hash)}`);
+      const traceData = traceResp.traces || [];
+      if (traceData.length === 0) { card.querySelector('.trace-loading').textContent = 'No trace observations found.'; return; }
+
+      const allPaths = [];
+      for (const t of traceData) {
+        try { const hops = JSON.parse(t.path_json || '[]'); if (hops.length) allPaths.push({ hops, observer: t.observer_name || t.observer || '?' }); } catch {}
+      }
+      const times = traceData.map(t => new Date(t.time).getTime()).filter(t => !isNaN(t));
+      const t0 = times.length ? Math.min(...times) : null;
+      const spreadMs = times.length > 1 ? Math.max(...times) - t0 : 0;
+      const uniqueObservers = [...new Set(traceData.map(t => t.observer))];
+
+      card.innerHTML = `<h3>Packet Trace</h3>
+        <div class="trace-summary">
+          <div class="trace-stat"><div class="trace-stat-value">${uniqueObservers.length}</div><div class="trace-stat-label">Observers</div></div>
+          <div class="trace-stat"><div class="trace-stat-value">${traceData.length}</div><div class="trace-stat-label">Observations</div></div>
+          <div class="trace-stat"><div class="trace-stat-value">${spreadMs > 0 ? (spreadMs / 1000).toFixed(1) + 's' : '—'}</div><div class="trace-stat-label">Time Spread</div></div>
+          <div class="trace-stat"><div class="trace-stat-value"><span class="badge badge-${payloadTypeColor(pkt.payload_type)}">${payloadTypeName(pkt.payload_type)}</span></div><div class="trace-stat-label">Packet Type</div></div>
+        </div>
+        ${allPaths.length > 0 ? _tracePathGraph(allPaths) : ''}
+        ${traceData.length > 0 ? _traceTimeline(traceData, t0, spreadMs) : ''}`;
+    } catch (e) {
+      card.querySelector('.trace-loading').textContent = 'Could not load trace data.';
+    }
+  }
+  // ── End trace helpers ────────────────────────────────────────────────────
+
   // Standalone packet detail page: /packet/:hash
   registerPage('packet-detail', {
     init: async (app, routeParam) => {
@@ -1908,6 +2018,7 @@
               ${hasRawHex ? `<div class="hex-legend">${buildHexLegend(ranges)}</div><div class="hex-dump">${createColoredHexDump(pkt.raw_hex, ranges)}</div>` : ''}
               <div class="field-table-wrap">${hasRawHex ? buildFieldTable(pkt, decoded, pathHops, ranges) : buildDecodedTable(decoded)}</div>
             </div>
+            ${pkt.hash ? `<div class="analytics-card" id="pktTraceCard"><h3>Packet Trace</h3><div class="trace-loading text-muted" style="padding:8px 0">Loading trace…</div></div>` : ''}
           </div>
         `;
 
@@ -2040,6 +2151,12 @@
           });
           if (coords.length >= 2) leafMap.fitBounds(L.latLngBounds(coords).pad(0.3));
           else leafMap.setView(coords[0], 13);
+        }
+
+        // Load trace data async (doesn't block page render)
+        if (pkt.hash) {
+          const traceCard = document.getElementById('pktTraceCard');
+          if (traceCard) _loadTraceCard(traceCard, pkt.hash, pkt);
         }
 
       } catch (e) {
