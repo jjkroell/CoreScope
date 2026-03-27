@@ -1943,10 +1943,6 @@
         page.innerHTML = `
           <div class="pkt-full-header">
             <button class="detail-back-btn pill-btn" id="pktBackBtn">← Back</button>
-            <div class="pkt-full-header-center">
-              <span class="badge badge-${payloadTypeColor(pkt.payload_type)}">${typeName}</span>
-              <span class="pkt-full-hash">${pkt.hash || 'Packet #' + pkt.id}</span>
-            </div>
           </div>
           <div class="pkt-full-body" id="pktFullBody">
             ${messageHtml}

@@ -1531,11 +1531,15 @@ button.ch-item.ch-item-encrypted .ch-badge { filter: grayscale(0.6); }
 .pkt-full-message-text { font-size: 1.05em; }
 .pkt-full-message-meta { font-size: 0.85em; color: var(--text-muted); margin-top: 4px; }
 .pkt-full-grid {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: stretch;
 }
 .pkt-full-grid.pkt-full-grid-nomap { grid-template-columns: 1fr; }
-.pkt-meta-card { margin-bottom: 0 !important; }
-.pkt-map-card { margin-bottom: 0 !important; }
+.pkt-meta-card { margin-bottom: 0 !important; display: flex; flex-direction: column; }
+.pkt-meta-card h3 { flex-shrink: 0; }
+.pkt-meta-card .pkt-full-dl { flex: 1; }
+.pkt-map-card { margin-bottom: 0 !important; display: flex; flex-direction: column; }
+.pkt-map-card h3 { flex-shrink: 0; }
+.pkt-map-card .pkt-detail-map { flex: 1; height: auto; min-height: 200px; }
 .pkt-meta-actions { margin-top: 12px; }
 .pkt-full-dl {
   display: grid; grid-template-columns: auto 1fr; gap: 5px 12px;
