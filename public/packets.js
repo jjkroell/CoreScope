@@ -186,13 +186,8 @@
     app.innerHTML = `<div class="packets-page">
       <div class="split-layout">
         <div class="panel-left" id="pktLeft"></div>
-        <div class="panel-right empty" id="pktRight" aria-live="polite">
-          <div class="panel-resize-handle" id="pktResizeHandle"></div>
-          <span>Select a packet to view details</span>
-        </div>
       </div>
     </div>`;
-    initPanelResize();
     await loadObservers();
     // Restore saved time window before first load
     const fTW = document.getElementById('fTimeWindow');
@@ -277,36 +272,12 @@
       }
     });
 
-    // If linked directly to a packet by ID, load its detail and filter list
+    // If linked directly to a packet by ID, navigate to the full-page detail
     if (directPacketId) {
-      const pktId = Number(directPacketId);
+      const pktId = directPacketId;
       directPacketId = null;
-      try {
-        const data = await api(`/packets/${pktId}`);
-        if (gen !== initGeneration) return;
-        if (data.packet?.hash) {
-          filters.hash = data.packet.hash;
-          const hashInput = document.getElementById('fHash');
-          if (hashInput) hashInput.value = filters.hash;
-          await loadPackets();
-        }
-        // Show detail in sidebar
-        const panel = document.getElementById('pktRight');
-        if (panel) {
-          panel.classList.remove('empty');
-          panel.innerHTML = '<div class="panel-resize-handle" id="pktResizeHandle"></div>';
-          const content = document.createElement('div');
-          panel.appendChild(content);
-          const pkt = data.packet;
-          try {
-            const hops = JSON.parse(pkt.path_json || '[]');
-            const newHops = hops.filter(h => !(h in hopNameCache));
-            if (newHops.length) await resolveHops(newHops);
-          } catch {}
-          await renderDetail(content, data);
-          initPanelResize();
-        }
-      } catch {}
+      goto('/packet/' + pktId);
+      return;
     }
     wsHandler = debouncedOnWS(function (msgs) {
       if (packetsPaused) {
@@ -953,13 +924,7 @@
         }
         else if (action === 'select-observation') {
           const parentHash = row.dataset.parentHash;
-          const group = packets.find(p => p.hash === parentHash);
-          const child = group?._children?.find(c => String(c.id) === String(value));
-          if (child) {
-            const parentData = group._fetchedData;
-            const obsPacket = parentData ? {...parentData.packet, observer_id: child.observer_id, observer_name: child.observer_name, snr: child.snr, rssi: child.rssi, path_json: child.path_json, timestamp: child.timestamp, first_seen: child.timestamp} : child;
-            selectPacket(child.id, parentHash, {packet: obsPacket, breakdown: parentData?.breakdown, observations: parentData?.observations}, child.id);
-          }
+          if (parentHash) goto('/packet/' + parentHash);
         }
         else if (action === 'select-hash') pktSelectHash(value);
         else if (action === 'toggle-select') { pktToggleGroup(value); pktSelectHash(value); }
@@ -968,8 +933,6 @@
       pktBody.addEventListener('keydown', handler);
     }
 
-    // Escape to close packet detail panel
-    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDetailPanel(); });
 
     renderTableRows();
     makeColumnsResizable('#pktTable', 'meshcore-pkt-col-widths');
@@ -1111,7 +1074,7 @@
       const size = p.raw_hex ? Math.floor(p.raw_hex.length / 2) : 0;
       const pathStr = renderPath(pathHops, p.observer_id);      const detail = getDetailPreview(decoded);
 
-      return `<tr data-id="${p.id}" data-hash="${p.hash || ''}" data-action="select-hash" data-value="${p.hash || p.id}" tabindex="0" role="row" class="${selectedId === p.id ? 'selected' : ''}">
+      return `<tr data-id="${p.id}" data-hash="${p.hash || ''}" data-action="select-hash" data-value="${p.hash || p.id}" tabindex="0" role="row">
         <td></td><td class="col-region">${region ? `<span class="badge-region">${region}</span>` : '—'}</td>
         <td class="col-time">${timeAgo(p.timestamp)}</td>
         <td class="mono col-hash">${truncate(p.hash || String(p.id), 8)}</td>
@@ -1767,12 +1730,8 @@
       selectPacket(pkt.id, hash, data);
     } catch {}
   }
-  async function pktSelectHash(hash) {
-    // When grouped, select packet — reuse cached detail endpoint
-    try {
-      const data = await api(`/packets/${hash}`);
-      if (data?.packet) selectPacket(data.packet.id, hash, data);
-    } catch {}
+  function pktSelectHash(hash) {
+    goto('/packet/' + hash);
   }
 
   let _themeRefreshHandler = null;
