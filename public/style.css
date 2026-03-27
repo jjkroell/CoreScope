@@ -545,6 +545,8 @@ button.ch-item.selected .ch-badge {
 .ch-sender-link { cursor: pointer; text-decoration: none; }
 .ch-sender-link:hover { text-decoration: underline; }
 .ch-avatar { cursor: pointer; }
+.ch-link { color: var(--accent); text-decoration: underline; word-break: break-all; }
+.ch-link:hover { opacity: 0.8; }
 
 /* Node tooltip (hover) */
 .ch-node-tooltip {

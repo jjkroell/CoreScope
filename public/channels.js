@@ -204,10 +204,29 @@
 
   function highlightMentions(text) {
     if (!text) return '';
-    return escapeHtml(text).replace(/@\[([^\]]+)\]/g, function(_, name) {
-      const safeId = btoa(encodeURIComponent(name));
-      return '<span class="ch-mention ch-sender-link" tabindex="0" role="button" data-node="' + safeId + '">@' + name + '</span>';
-    });
+    // Linkify URLs before escaping so we can inject <a> tags safely.
+    // Split on URLs, escape non-URL parts, wrap URL parts in anchors.
+    const URL_RE = /https?:\/\/[^\s<>"']+/g;
+    const parts = [];
+    let last = 0, m;
+    while ((m = URL_RE.exec(text)) !== null) {
+      if (m.index > last) parts.push({ t: 'text', v: text.slice(last, m.index) });
+      parts.push({ t: 'url', v: m[0] });
+      last = m.index + m[0].length;
+    }
+    if (last < text.length) parts.push({ t: 'text', v: text.slice(last) });
+
+    return parts.map(p => {
+      if (p.t === 'url') {
+        const safe = escapeHtml(p.v);
+        return `<a href="${safe}" target="_blank" rel="noopener noreferrer" class="ch-link">${safe}</a>`;
+      }
+      // Escape then highlight @[name] mentions
+      return escapeHtml(p.v).replace(/@\[([^\]]+)\]/g, function(_, name) {
+        const safeId = btoa(encodeURIComponent(name));
+        return '<span class="ch-mention ch-sender-link" tabindex="0" role="button" data-node="' + safeId + '">@' + name + '</span>';
+      });
+    }).join('');
   }
 
   let regionChangeHandler = null;
