@@ -749,8 +749,23 @@ button.ch-item.selected .ch-badge {
   padding: 16px; margin-bottom: 16px;
 }
 .trace-section h3 { font-size: 14px; font-weight: 700; margin-bottom: 12px; }
-.trace-graph-wrap { width: 100%; overflow: hidden; border-radius: 4px; }
+.trace-graph-wrap { position: relative; width: 100%; overflow: hidden; border-radius: 4px; }
 .trace-path-svg { display: block; width: 100%; height: auto; user-select: none; }
+.trace-graph-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.45);
+  border-radius: 4px;
+  cursor: pointer;
+  backdrop-filter: blur(2px);
+}
+.trace-graph-overlay-icon { font-size: 28px; line-height: 1; }
+.trace-graph-overlay-label { font-size: 0.8rem; font-weight: 600; color: #fff; letter-spacing: 0.04em; text-transform: uppercase; }
 
 /* Path Visualization */
 .trace-path-viz {
@@ -1390,24 +1405,11 @@ button.ch-item.ch-item-encrypted .ch-badge { filter: grayscale(0.6); }
 .node-map-qr-overlay svg { max-width: 56px !important; display: block; margin: 0; }
 [data-theme="dark"] .node-map-qr-overlay { background: rgba(255,255,255,0.4); }
 
-/* Replay on Live Map button in packet detail */
 .detail-actions {
   display: flex;
   gap: 8px;
   margin-top: 12px;
 }
-.replay-live-btn {
-  padding: 5px 12px;
-  background: rgba(168, 85, 247, 0.15);
-  border: 1px solid rgba(168, 85, 247, 0.3);
-  color: #c084fc;
-  font-size: 0.78rem;
-  font-weight: 600;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-.replay-live-btn:hover { background: rgba(168, 85, 247, 0.3); }
 
 /* Node filter dropdown */
 .node-filter-wrap { display: inline-block; }
@@ -1541,7 +1543,8 @@ button.ch-item.ch-item-encrypted .ch-badge { filter: grayscale(0.6); }
 .pkt-meta-card .pkt-full-dl { flex: 1; }
 .pkt-map-card { margin-bottom: 0 !important; display: flex; flex-direction: column; }
 .pkt-map-card h3 { flex-shrink: 0; }
-.pkt-map-card .pkt-detail-map { flex: 1; height: auto; min-height: 200px; }
+.pkt-map-inner { position: relative; flex: 1; display: flex; flex-direction: column; min-height: 200px; }
+.pkt-map-inner .pkt-detail-map { flex: 1; height: 100%; min-height: 200px; }
 .pkt-meta-actions { margin-top: 12px; }
 .pkt-full-dl {
   display: grid; grid-template-columns: auto 1fr; gap: 5px 12px;
@@ -1570,7 +1573,7 @@ button.ch-item.ch-item-encrypted .ch-badge { filter: grayscale(0.6); }
   .pkt-full-body { padding: 12px; gap: 12px; }
   .pkt-full-hash { font-size: 10px; }
   .detail-actions { gap: 6px; }
-  .detail-map-link, .replay-live-btn { font-size: 0.72rem; padding: 5px 10px; }
+  .detail-map-link { font-size: 0.72rem; padding: 5px 10px; }
 }
 @media (max-width: 480px) {
   .pkt-full-body { padding: 8px; gap: 8px; }
@@ -1735,6 +1738,12 @@ tr[data-hops]:hover { background: rgba(59,130,246,0.1); }
 /* #21 — max-width applied via .ch-msg-bubble rule above */
 
 /* === Bug fixes: #16 collapsible controls, #53 detail map height === */
+.map-back-btn {
+  position: absolute;
+  top: 80px;
+  left: 10px;
+  z-index: 1001;
+}
 .map-controls-toggle {
   position: absolute;
   top: 10px;
@@ -1761,7 +1770,23 @@ tr[data-hops]:hover { background: rgba(59,130,246,0.1); }
   min-height: 200px;
 }
 .node-top-row { display: flex; gap: 16px; margin-bottom: 12px; }
-.node-top-row .node-map-wrap { flex: 3; min-height: 420px; border-radius: 8px; overflow: hidden; }
+.node-top-row .node-map-wrap { flex: 3; min-height: 420px; border-radius: 8px; overflow: hidden; position: relative; }
+.map-lock-pill {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  border: none;
+  border-radius: 99px;
+  padding: 5px 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+  white-space: nowrap;
+}
 .node-top-row .node-map-wrap .node-detail-map { height: 100%; }
 .node-top-row .node-qr-wrap { flex: 1; min-width: 0; max-width: none; display: flex; flex-direction: column; align-items: stretch; justify-content: center; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
 .node-top-row .node-qr-wrap .node-qr { flex: 1; margin: 0; display: flex; align-items: center; justify-content: center; }

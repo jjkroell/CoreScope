@@ -244,7 +244,7 @@
         </div>
 
         <div class="node-top-row">
-          ${hasLoc ? `<div class="node-map-wrap"><div id="nodeFullMap" class="node-detail-map" style="height:100%;min-height:200px;border-radius:8px;overflow:hidden"></div></div>` : ''}
+          ${hasLoc ? `<div class="node-map-wrap"><div id="nodeFullMap" class="node-detail-map" style="height:100%;min-height:200px;border-radius:8px;overflow:hidden"></div><button class="map-lock-pill" id="nodeMapLockBtn">🔒 Click to unlock</button></div>` : ''}
           <div class="node-qr-wrap${hasLoc ? '' : ' node-qr-wrap--full'}">
             <div class="node-qr" id="nodeFullQrCode"></div>
           </div>
@@ -322,10 +322,34 @@
       if (hasLoc) {
         try {
           if (detailMap) { detailMap.remove(); detailMap = null; }
-          detailMap = L.map('nodeFullMap', { zoomControl: true, attributionControl: false }).setView([n.lat, n.lon], 13);
+          detailMap = L.map('nodeFullMap', { zoomControl: false, attributionControl: false, dragging: false, scrollWheelZoom: false, doubleClickZoom: false, touchZoom: false, boxZoom: false, keyboard: false }).setView([n.lat, n.lon], 13);
           L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(detailMap);
           L.marker([n.lat, n.lon]).addTo(detailMap).bindPopup(n.name || n.public_key.slice(0, 12));
           setTimeout(() => detailMap.invalidateSize(), 100);
+
+          // Lock / unlock toggle pill
+          const lockBtn = document.getElementById('nodeMapLockBtn');
+          let mapLocked = true;
+          lockBtn.addEventListener('click', () => {
+            mapLocked = !mapLocked;
+            if (mapLocked) {
+              detailMap.dragging.disable();
+              detailMap.scrollWheelZoom.disable();
+              detailMap.doubleClickZoom.disable();
+              detailMap.touchZoom.disable();
+              detailMap.boxZoom.disable();
+              detailMap.keyboard.disable();
+              lockBtn.textContent = '🔒 Click to unlock';
+            } else {
+              detailMap.dragging.enable();
+              detailMap.scrollWheelZoom.enable();
+              detailMap.doubleClickZoom.enable();
+              detailMap.touchZoom.enable();
+              detailMap.boxZoom.enable();
+              detailMap.keyboard.enable();
+              lockBtn.textContent = '🔓 Click to lock';
+            }
+          });
         } catch {}
       }
 

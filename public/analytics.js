@@ -3,7 +3,7 @@
 
 (function () {
   let _analyticsData = {};
-  const sf = (v, d) => (v != null ? v.toFixed(d) : '–'); // safe toFixed
+  const sf = (v, d) => (v != null && !isNaN(+v) ? (+v).toFixed(d) : '–'); // safe toFixed
   function esc(s) { return s ? String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') : ''; }
 
   // --- Status color helpers (read from CSS variables for theme support) ---
@@ -159,17 +159,28 @@
 
   async function renderTab(tab) {
     const el = document.getElementById('analyticsContent');
+    if (!el) return;
     const d = _analyticsData;
-    switch (tab) {
-      case 'overview': renderOverview(el, d); break;
-      case 'rf': renderRF(el, d.rfData); break;
-      case 'topology': renderTopology(el, d.topoData); break;
-      case 'channels': renderChannels(el, d.chanData); break;
-      case 'hashsizes': renderHashSizes(el, d.hashData); break;
-      case 'collisions': await renderCollisionTab(el, d.hashData); break;
-      case 'subpaths': await renderSubpaths(el); break;
-      case 'nodes': await renderNodesTab(el); break;
-      case 'distance': await renderDistanceTab(el); break;
+    // If data hasn't loaded yet, show a loading state and bail
+    if (!d || !d.rfData) {
+      el.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted)">Loading…</div>';
+      return;
+    }
+    try {
+      switch (tab) {
+        case 'overview': renderOverview(el, d); break;
+        case 'rf': renderRF(el, d.rfData); break;
+        case 'topology': renderTopology(el, d.topoData); break;
+        case 'channels': renderChannels(el, d.chanData); break;
+        case 'hashsizes': renderHashSizes(el, d.hashData); break;
+        case 'collisions': await renderCollisionTab(el, d.hashData); break;
+        case 'subpaths': await renderSubpaths(el); break;
+        case 'nodes': await renderNodesTab(el); break;
+        case 'distance': await renderDistanceTab(el); break;
+      }
+    } catch (e) {
+      console.error('[analytics] renderTab error for tab "' + tab + '":', e);
+      el.innerHTML = `<div style="padding:40px;text-align:center;color:var(--text-muted)">Failed to render tab: ${e.message}</div>`;
     }
     // Auto-apply column resizing to all analytics tables
     requestAnimationFrame(() => {
@@ -275,6 +286,10 @@
 
   // ===================== RF / SIGNAL =====================
   function renderRF(el, rf) {
+    if (!rf || !rf.snr) {
+      el.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted)">No RF/signal data available.</div>';
+      return;
+    }
     const snrHist = histogram(rf.snrValues, 20, statusGreen());
     const rssiHist = histogram(rf.rssiValues, 20, accentColor());
 
@@ -1252,10 +1267,28 @@
       const nodes = nodesResp.nodes || nodesResp;
       const myNodes = JSON.parse(localStorage.getItem('meshcore-my-nodes') || '[]');
       const myKeys = new Set(myNodes.map(n => n.pubkey));
+      const favKeys = new Set(JSON.parse(localStorage.getItem('meshcore-favorites') || '[]'));
 
       // Map bulk health by pubkey
       const healthMap = {};
       bulkHealth.forEach(h => { healthMap[h.public_key] = h; });
+
+      // Build node lookup from already-loaded list
+      const nodeMap = {};
+      nodes.forEach(n => { nodeMap[n.public_key] = n; });
+
+      // Fetch any claimed/fav nodes not already covered by bulk health or node list
+      const keysToFetch = [...new Set([...myKeys, ...favKeys])].filter(k => !healthMap[k] || !nodeMap[k]);
+      if (keysToFetch.length) {
+        await Promise.allSettled(keysToFetch.map(async k => {
+          try {
+            const resp = await api(`/nodes/${k}`, { ttl: 30000 });
+            if (resp.node) nodeMap[k] = nodeMap[k] || resp.node;
+            if (resp.stats) healthMap[k] = healthMap[k] || { public_key: k, stats: resp.stats, observers: resp.observers || [] };
+          } catch {}
+        }));
+      }
+
       const enriched = nodes.filter(n => healthMap[n.public_key]).map(n => ({ ...n, health: { stats: healthMap[n.public_key].stats, observers: healthMap[n.public_key].observers } }));
 
       // Compute rankings
@@ -1306,21 +1339,47 @@
             }).join('')}
           </div>
 
-          ${myKeys.size ? `<h3>⭐ My Claimed Nodes</h3>
+          ${myKeys.size ? `<h3><span style="color:var(--accent)">★</span> My Claimed Nodes</h3>
           <table class="analytics-table" style="margin-bottom:24px">
             <thead><tr><th>Node</th><th>Role</th><th>Packets</th><th>Avg SNR</th><th>Observers</th><th>Last Heard</th></tr></thead>
             <tbody>
-              ${enriched.filter(n => myKeys.has(n.public_key)).map(n => {
-                const s = n.health.stats;
+              ${myNodes.map(mn => {
+                const node = nodeMap[mn.pubkey];
+                const h = healthMap[mn.pubkey];
+                if (!node) return `<tr><td colspan="6" class="text-muted">${esc(mn.name || mn.pubkey.slice(0, 12))} — not yet seen</td></tr>`;
+                const s = h?.stats || {};
+                const n = { ...node, health: { stats: s, observers: h?.observers || [] } };
                 return `<tr>
                   <td>${nodeLink(n)}</td>
-                  <td><span class="badge" style="background:${(ROLE_COLORS[n.role]||'#6b7280')}20;color:${ROLE_COLORS[n.role]||'#6b7280'}">${n.role}</span></td>
+                  <td><span class="badge" style="background:${(ROLE_COLORS[n.role]||'#6b7280')}20;color:${ROLE_COLORS[n.role]||'#6b7280'}">${n.role || '—'}</span></td>
                   <td>${s.totalTransmissions || s.totalPackets || 0}</td>
                   <td>${s.avgSnr != null ? s.avgSnr.toFixed(1) + ' dB' : '—'}</td>
                   <td>${n.health.observers?.length || 0}</td>
                   <td>${s.lastHeard ? timeAgo(s.lastHeard) : '—'}</td>
                 </tr>`;
-              }).join('') || '<tr><td colspan="6" class="text-muted">No claimed nodes have health data</td></tr>'}
+              }).join('') || '<tr><td colspan="6" class="text-muted">No claimed nodes found</td></tr>'}
+            </tbody>
+          </table>` : ''}
+
+          ${favKeys.size ? `<h3><span style="color:#f59e0b">★</span> Favorite Nodes</h3>
+          <table class="analytics-table" style="margin-bottom:24px">
+            <thead><tr><th>Node</th><th>Role</th><th>Packets</th><th>Avg SNR</th><th>Observers</th><th>Last Heard</th></tr></thead>
+            <tbody>
+              ${[...favKeys].filter(k => !myKeys.has(k)).map(k => {
+                const node = nodeMap[k];
+                const h = healthMap[k];
+                if (!node) return `<tr><td colspan="6" class="text-muted">${esc(k.slice(0, 16))}… — not yet seen</td></tr>`;
+                const s = h?.stats || {};
+                const n = { ...node, health: { stats: s, observers: h?.observers || [] } };
+                return `<tr>
+                  <td>${nodeLink(n)}</td>
+                  <td><span class="badge" style="background:${(ROLE_COLORS[n.role]||'#6b7280')}20;color:${ROLE_COLORS[n.role]||'#6b7280'}">${n.role || '—'}</span></td>
+                  <td>${s.totalTransmissions || s.totalPackets || 0}</td>
+                  <td>${s.avgSnr != null ? s.avgSnr.toFixed(1) + ' dB' : '—'}</td>
+                  <td>${n.health.observers?.length || 0}</td>
+                  <td>${s.lastHeard ? timeAgo(s.lastHeard) : '—'}</td>
+                </tr>`;
+              }).join('') || '<tr><td colspan="6" class="text-muted">All favorites are also claimed nodes</td></tr>'}
             </tbody>
           </table>` : ''}
 

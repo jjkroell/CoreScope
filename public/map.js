@@ -84,6 +84,7 @@
     container.innerHTML = `
       <div id="map-wrap" style="position:relative;width:100%;height:100%;">
         <div id="leaflet-map" style="width:100%;height:100%;"></div>
+        <button class="detail-back-btn pill-btn map-back-btn" id="mapBackBtn" hidden>← Back</button>
         <button class="map-controls-toggle" id="mapControlsToggle" aria-label="Toggle map controls" aria-expanded="true">⚙️</button>
         <div class="map-controls" id="mapControls" role="region" aria-label="Map controls">
           <h3>🗺️ Map Controls</h3>
@@ -187,6 +188,14 @@
 
     // Fix map size on SPA load
     setTimeout(() => map.invalidateSize(), 100);
+
+    // Back button — only shown when a return URL is provided (e.g. from packet detail)
+    const _backUrl = urlParams.get('back') || null;
+    const _backBtn = document.getElementById('mapBackBtn');
+    if (_backUrl) {
+      _backBtn.removeAttribute('hidden');
+      _backBtn.addEventListener('click', () => goto(_backUrl));
+    }
 
     // Controls toggle
     const toggleBtn = document.getElementById('mapControlsToggle');

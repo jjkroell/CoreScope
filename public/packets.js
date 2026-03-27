@@ -1325,7 +1325,6 @@
         ${pathHops.length ? `<button class="detail-map-link" id="viewRouteBtn">🗺️ View route on map</button>` : ''}
         ${pathHops.length && pkt.hash ? `<a href="/packet/${pkt.hash}" class="detail-map-link" style="text-decoration:none">↗ Full page</a>` : ''}
         ${pkt.hash ? `<a href="/traces/${pkt.hash}" class="detail-map-link" style="text-decoration:none">🔍 Trace</a>` : ''}
-        <button class="replay-live-btn" title="Replay this packet on the live map">▶ Replay</button>
       </div>
 
       ${hasRawHex ? `<div class="hex-legend">${buildHexLegend(ranges)}</div>
@@ -1333,39 +1332,6 @@
 
       <div class="field-table-wrap">${hasRawHex ? buildFieldTable(pkt, decoded, pathHops, ranges) : buildDecodedTable(decoded)}</div>
     `;
-
-    // Wire up replay button
-    const replayBtn = panel.querySelector('.replay-live-btn');
-    if (replayBtn) {
-      replayBtn.addEventListener('click', () => {
-        // Build replay packets for ALL observations of this transmission
-        const obs = data.observations || [];
-        const replayPackets = [];
-        if (obs.length > 1) {
-          for (const o of obs) {
-            let oPath;
-            try { oPath = JSON.parse(o.path_json || '[]'); } catch { oPath = pathHops; }
-            let oDec;
-            try { oDec = JSON.parse(o.decoded_json || '{}'); } catch { oDec = decoded; }
-            replayPackets.push({
-              id: o.id, hash: pkt.hash, raw: o.raw_hex || pkt.raw_hex,
-              _ts: new Date(o.timestamp).getTime(),
-              decoded: { header: { payloadTypeName: typeName }, payload: oDec, path: { hops: oPath } },
-              snr: o.snr, rssi: o.rssi, observer: obsName(o.observer_id)
-            });
-          }
-        } else {
-          replayPackets.push({
-            id: pkt.id, hash: pkt.hash, raw: pkt.raw_hex,
-            _ts: new Date(pkt.timestamp).getTime(),
-            decoded: { header: { payloadTypeName: typeName }, payload: decoded, path: { hops: pathHops } },
-            snr: pkt.snr, rssi: pkt.rssi, observer: obsName(pkt.observer_id)
-          });
-        }
-        sessionStorage.setItem('replay-packet', JSON.stringify(replayPackets));
-        goto('/live');
-      });
-    }
 
     // Wire up view route on map button
     const routeBtn = document.getElementById('viewRouteBtn');
@@ -1853,31 +1819,51 @@
         ${allPaths.length > 0 ? _tracePathGraph(allPaths) : ''}
         ${traceData.length > 0 ? _traceTimeline(traceData, t0, spreadMs) : ''}`;
 
-      // Wire up hover/touch zoom on the path graph SVG
+      // Toggle lock/unlock on the path graph
       const svg = card.querySelector('.trace-path-svg');
       if (svg) {
+        const wrap = svg.closest('.trace-graph-wrap');
         const vw = +svg.dataset.vw, vh = +svg.dataset.vh;
         const ZOOM = 2.5;
         const zw = vw / ZOOM, zh = vh / ZOOM;
-        const toSvgCoords = (clientX, clientY) => {
-          const r = svg.getBoundingClientRect();
-          return [((clientX - r.left) / r.width) * vw, ((clientY - r.top) / r.height) * vh];
-        };
-        const applyZoom = (clientX, clientY) => {
-          const [sx, sy] = toSvgCoords(clientX, clientY);
-          const vx = Math.max(0, Math.min(vw - zw, sx - zw / 2));
-          const vy = Math.max(0, Math.min(vh - zh, sy - zh / 2));
-          svg.setAttribute('viewBox', `${vx} ${vy} ${zw} ${zh}`);
-          svg.style.cursor = 'move';
-        };
-        const resetZoom = () => {
+        let zoomAbort = null;
+
+        const overlay = document.createElement('div');
+        overlay.className = 'trace-graph-overlay';
+        overlay.innerHTML = `<span class="trace-graph-overlay-icon">🔍</span><span class="trace-graph-overlay-label">Click to explore</span>`;
+        wrap.appendChild(overlay);
+
+        const lock = () => {
+          if (zoomAbort) { zoomAbort.abort(); zoomAbort = null; }
           svg.setAttribute('viewBox', `0 0 ${vw} ${vh}`);
-          svg.style.cursor = 'zoom-in';
+          svg.style.cursor = 'default';
+          overlay.innerHTML = `<span class="trace-graph-overlay-icon">🔍</span><span class="trace-graph-overlay-label">Click to explore</span>`;
+          wrap.appendChild(overlay);
         };
-        svg.addEventListener('mousemove', e => applyZoom(e.clientX, e.clientY));
-        svg.addEventListener('mouseleave', resetZoom);
-        svg.addEventListener('touchmove', e => { e.preventDefault(); applyZoom(e.touches[0].clientX, e.touches[0].clientY); }, { passive: false });
-        svg.addEventListener('touchend', resetZoom);
+
+        const unlock = () => {
+          overlay.remove();
+          zoomAbort = new AbortController();
+          const sig = { signal: zoomAbort.signal };
+          const toSvgCoords = (clientX, clientY) => {
+            const r = svg.getBoundingClientRect();
+            return [((clientX - r.left) / r.width) * vw, ((clientY - r.top) / r.height) * vh];
+          };
+          const applyZoom = (clientX, clientY) => {
+            const [sx, sy] = toSvgCoords(clientX, clientY);
+            svg.setAttribute('viewBox', `${Math.max(0, Math.min(vw - zw, sx - zw / 2))} ${Math.max(0, Math.min(vh - zh, sy - zh / 2))} ${zw} ${zh}`);
+            svg.style.cursor = 'move';
+          };
+          svg.style.cursor = 'zoom-in';
+          svg.addEventListener('mousemove', e => applyZoom(e.clientX, e.clientY), sig);
+          svg.addEventListener('mouseleave', () => { svg.setAttribute('viewBox', `0 0 ${vw} ${vh}`); svg.style.cursor = 'zoom-in'; }, sig);
+          svg.addEventListener('click', lock, sig);
+          svg.addEventListener('touchmove', e => { e.preventDefault(); applyZoom(e.touches[0].clientX, e.touches[0].clientY); }, { passive: false, signal: zoomAbort.signal });
+          svg.addEventListener('touchend', () => { svg.setAttribute('viewBox', `0 0 ${vw} ${vh}`); }, sig);
+        };
+
+        overlay.addEventListener('click', unlock);
+        overlay.addEventListener('touchend', (e) => { e.preventDefault(); unlock(); });
       }
     } catch (e) {
       card.querySelector('.trace-loading').textContent = 'Could not load trace data.';
@@ -1989,10 +1975,9 @@
                 </dl>
                 <div class="detail-actions pkt-meta-actions">
                   ${pathHops.length ? `<button class="detail-map-link" id="pktFullRouteBtn">🗺️ View route on map</button>` : ''}
-                  <button class="replay-live-btn" id="pktFullReplayBtn">▶ Replay</button>
                 </div>
               </div>
-              ${hasMap ? `<div class="analytics-card pkt-map-card"><h3>Route Map</h3><div id="pktDetailMap" class="pkt-detail-map"></div></div>` : ''}
+              ${hasMap ? `<div class="analytics-card pkt-map-card"><h3>Route Map</h3><div class="pkt-map-inner"><div id="pktDetailMap" class="pkt-detail-map"></div><button class="map-lock-pill" id="pktMapLockBtn">🔒 Click to unlock</button></div></div>` : ''}
             </div>
             <div class="analytics-card">
               <h3>${hasRawHex ? `Byte Breakdown (${size} bytes)` : 'Decoded Payload'}</h3>
@@ -2009,18 +1994,6 @@
         // Back button
         page.querySelector('#pktBackBtn').addEventListener('click', () => goto('/packets'));
 
-        // Replay button
-        page.querySelector('#pktFullReplayBtn')?.addEventListener('click', () => {
-          const obs = data.observations || [];
-          const pkts = obs.length > 1 ? obs.map(o => {
-            let oPath; try { oPath = JSON.parse(o.path_json || '[]'); } catch { oPath = pathHops; }
-            let oDec; try { oDec = JSON.parse(o.decoded_json || '{}'); } catch { oDec = decoded; }
-            return { id: o.id, hash: pkt.hash, raw: o.raw_hex || pkt.raw_hex, _ts: new Date(o.timestamp).getTime(), decoded: { header: { payloadTypeName: typeName }, payload: oDec, path: { hops: oPath } }, snr: o.snr, rssi: o.rssi, observer: obsName(o.observer_id) };
-          }) : [{ id: pkt.id, hash: pkt.hash, raw: pkt.raw_hex, _ts: new Date(pkt.timestamp).getTime(), decoded: { header: { payloadTypeName: typeName }, payload: decoded, path: { hops: pathHops } }, snr: pkt.snr, rssi: pkt.rssi, observer: obsName(pkt.observer_id) }];
-          sessionStorage.setItem('replay-packet', JSON.stringify(pkts));
-          goto('/live');
-        });
-
         // View route on map button
         page.querySelector('#pktFullRouteBtn')?.addEventListener('click', async () => {
           try {
@@ -2035,7 +2008,8 @@
             if (decoded.adName || decoded.name) origin.name = decoded.adName || decoded.name;
             if (sLat != null && sLon != null) { origin.lat = sLat; origin.lon = sLon; }
             sessionStorage.setItem('map-route-hops', JSON.stringify({ origin, hops: keys }));
-            goto('/map?route=1');
+            const backUrl = pkt.hash ? '/packet/' + pkt.hash : '/packets';
+            goto('/map?route=1&back=' + encodeURIComponent(backUrl));
           } catch { goto('/map'); }
         });
 
@@ -2070,7 +2044,7 @@
 
         // Render inline Leaflet map
         if (hasMap) {
-          const leafMap = L.map('pktDetailMap');
+          const leafMap = L.map('pktDetailMap', { zoomControl: false, dragging: false, scrollWheelZoom: false, doubleClickZoom: false, touchZoom: false, boxZoom: false, keyboard: false });
           L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '© OpenStreetMap contributors', maxZoom: 19
           }).addTo(leafMap);
@@ -2132,6 +2106,30 @@
           });
           if (coords.length >= 2) leafMap.fitBounds(L.latLngBounds(coords).pad(0.3));
           else leafMap.setView(coords[0], 13);
+
+          // Lock / unlock toggle pill
+          const pktLockBtn = document.getElementById('pktMapLockBtn');
+          let pktMapLocked = true;
+          pktLockBtn.addEventListener('click', () => {
+            pktMapLocked = !pktMapLocked;
+            if (pktMapLocked) {
+              leafMap.dragging.disable();
+              leafMap.scrollWheelZoom.disable();
+              leafMap.doubleClickZoom.disable();
+              leafMap.touchZoom.disable();
+              leafMap.boxZoom.disable();
+              leafMap.keyboard.disable();
+              pktLockBtn.textContent = '🔒 Click to unlock';
+            } else {
+              leafMap.dragging.enable();
+              leafMap.scrollWheelZoom.enable();
+              leafMap.doubleClickZoom.enable();
+              leafMap.touchZoom.enable();
+              leafMap.boxZoom.enable();
+              leafMap.keyboard.enable();
+              pktLockBtn.textContent = '🔓 Click to lock';
+            }
+          });
         }
 
         // Load trace data async (doesn't block page render)

@@ -578,7 +578,15 @@ window.addEventListener('DOMContentLoaded', () => {
       const stats = await api('/stats', { ttl: CLIENT_TTL.stats });
       const el = document.getElementById('navStats');
       if (el) {
-        el.innerHTML = `<span class="stat-val">${stats.totalPackets}</span> pkts <span class="stat-val">${stats.totalNodes}</span> nodes <span class="stat-val">${stats.totalObservers}</span> obs`;
+        const vals = el.querySelectorAll('.stat-val');
+        if (vals.length === 3) {
+          // Update text only — avoids innerHTML replacement which causes hover flicker on other elements
+          vals[0].textContent = stats.totalPackets;
+          vals[1].textContent = stats.totalNodes;
+          vals[2].textContent = stats.totalObservers;
+        } else {
+          el.innerHTML = `<span class="stat-val">${stats.totalPackets}</span> pkts <span class="stat-val">${stats.totalNodes}</span> nodes <span class="stat-val">${stats.totalObservers}</span> obs`;
+        }
         el.querySelectorAll('.stat-val').forEach(s => s.classList.add('updated'));
         setTimeout(() => { el.querySelectorAll('.stat-val').forEach(s => s.classList.remove('updated')); }, 600);
       }
