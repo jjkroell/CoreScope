@@ -1788,75 +1788,224 @@
     }
   });
 
-  // Standalone packet detail page: #/packet/123 or #/packet/HASH
+  // Standalone packet detail page: /packet/:hash
   registerPage('packet-detail', {
     init: async (app, routeParam) => {
       const param = routeParam;
-      app.innerHTML = `<div class="packet-detail-page"><div class="text-center text-muted" style="padding:40px">Loading packet…</div></div>`;
+      app.innerHTML = `<div class="pkt-full-page"><div class="pkt-full-body" style="justify-content:center;align-items:center"><div class="text-center text-muted" style="padding:60px">Loading packet…</div></div></div>`;
       try {
         await loadObservers();
         const data = await api(`/packets/${param}`);
-        if (!data?.packet) { app.innerHTML = `<div class="packet-detail-page" style="text-align:center;padding-top:40px"><h2>Packet not found</h2><p>Packet ${param} doesn't exist.</p><a href="/packets">← Back to packets</a></div>`; return; }
-        const hops = [];
-        try { const ph = JSON.parse(data.packet.path_json || '[]'); hops.push(...ph); } catch {}
-        const newHops = hops.filter(h => !(h in hopNameCache));
+        if (!data?.packet) {
+          app.innerHTML = `<div class="pkt-full-page"><div class="pkt-full-header"><button class="detail-back-btn pill-btn" onclick="history.back()">← Back</button></div><div class="pkt-full-body" style="align-items:center;justify-content:center;flex-direction:column;gap:12px"><h2>Packet not found</h2><p style="color:var(--text-muted)">Packet ${escapeHtml(param)} doesn't exist.</p></div></div>`;
+          return;
+        }
+
+        const pkt = data.packet;
+        const breakdown = data.breakdown || {};
+        const ranges = breakdown.ranges || [];
+        let decoded = {};
+        try { decoded = JSON.parse(pkt.decoded_json); } catch {}
+        let pathHops = [];
+        try { pathHops = JSON.parse(pkt.path_json || '[]'); } catch {}
+
+        const newHops = pathHops.filter(h => !(h in hopNameCache));
         if (newHops.length) await resolveHops(newHops);
-        const container = document.createElement('div');
-        container.className = 'packet-detail-page';
-        container.innerHTML = `<div style="margin-bottom:16px"><a href="/packets" style="color:var(--accent);text-decoration:none">← Back to packets</a></div>`;
-        const detail = document.createElement('div');
-        container.appendChild(detail);
-        await renderDetail(detail, data);
 
-        // Auto-render route map if packet has path hops
-        if (hops.length > 0) {
-          const mapSection = document.createElement('div');
-          mapSection.className = 'pkt-detail-map-section';
-          mapSection.innerHTML = `<div class="pkt-detail-map-label">Route Map</div><div id="pktDetailMap" class="pkt-detail-map"></div>`;
-          container.appendChild(mapSection);
+        // Re-resolve with HopResolver for full names
+        if (pathHops.length) {
+          try {
+            await ensureHopResolver();
+            const res = HopResolver.resolve(pathHops);
+            if (res) for (const [k, v] of Object.entries(res)) {
+              hopNameCache[k] = v;
+              if (pkt.observer_id) hopNameCache[k + ':' + pkt.observer_id] = v;
+            }
+          } catch {}
+        }
 
-          app.innerHTML = '';
-          app.appendChild(container);
+        const rawPathByte = pkt.raw_hex ? parseInt(pkt.raw_hex.slice(2, 4), 16) : NaN;
+        const hashSize = isNaN(rawPathByte) ? null : ((rawPathByte >> 6) + 1);
+        const size = pkt.raw_hex ? Math.floor(pkt.raw_hex.length / 2) : 0;
+        const typeName = payloadTypeName(pkt.payload_type);
+        const snr = pkt.snr ?? decoded.SNR ?? decoded.snr ?? null;
+        const rssi = pkt.rssi ?? decoded.RSSI ?? decoded.rssi ?? null;
+        const hasRawHex = !!pkt.raw_hex;
+        const hasMap = pathHops.length > 0;
 
-          // Initialize Leaflet map after insertion into DOM
+        const observations = data.observations || [];
+        const obsCount = data.observation_count || observations.length || 1;
+        const uniqueObservers = new Set(observations.map(o => o.observer_id)).size;
+
+        let propagationHtml = '—';
+        if (observations.length >= 2) {
+          const times = observations.map(o => new Date(o.timestamp).getTime()).filter(t => !isNaN(t));
+          if (times.length >= 2) {
+            const spread = Math.max(...times) - Math.min(...times);
+            propagationHtml = spread < 1000 ? `${spread}ms` : spread < 60000 ? `${(spread / 1000).toFixed(1)}s` : `${(spread / 60000).toFixed(1)}m`;
+            propagationHtml += ` <span style="color:var(--text-muted);font-size:0.85em">(${obsCount} obs, ${uniqueObservers} observers)</span>`;
+          }
+        }
+
+        // Sync location from decoded payload
+        let locationHtml = '—';
+        if (decoded.lat != null && decoded.lon != null && !(decoded.lat === 0 && decoded.lon === 0)) {
+          locationHtml = `${decoded.lat.toFixed(5)}, ${decoded.lon.toFixed(5)}`;
+          if (decoded.name) locationHtml = `${escapeHtml(decoded.name)} — ${locationHtml}`;
+          const lKey = decoded.pubKey || decoded.srcPubKey;
+          if (lKey) locationHtml += ` <a href="/map?node=${encodeURIComponent(lKey)}" style="color:var(--accent);font-size:0.85em">📍 map</a>`;
+        }
+
+        // Message box for text packets
+        let messageHtml = '';
+        if (decoded.text) {
+          const parts = [
+            decoded.channel || (decoded.channel_idx != null ? `Ch ${decoded.channel_idx}` : ''),
+            decoded.path_len != null ? `${decoded.path_len} hops` : '',
+            snr != null ? `SNR ${snr} dB` : ''
+          ].filter(Boolean).join(' · ');
+          messageHtml = `<div class="pkt-full-message"><div class="pkt-full-message-text">${escapeHtml(decoded.text)}</div>${parts ? `<div class="pkt-full-message-meta">${parts}</div>` : ''}</div>`;
+        }
+
+        // Build page
+        const page = document.createElement('div');
+        page.className = 'pkt-full-page';
+        page.innerHTML = `
+          <div class="pkt-full-header">
+            <button class="detail-back-btn pill-btn" id="pktBackBtn">← Back</button>
+            <div class="pkt-full-header-center">
+              <span class="badge badge-${payloadTypeColor(pkt.payload_type)}">${typeName}</span>
+              <span class="pkt-full-hash">${pkt.hash || 'Packet #' + pkt.id}</span>
+            </div>
+            <div class="pkt-full-header-actions">
+              ${pkt.hash ? `<a href="/traces/${pkt.hash}" class="detail-map-link" style="text-decoration:none">🔍 Trace</a>` : ''}
+              <button class="replay-live-btn" id="pktFullReplayBtn">▶ Replay</button>
+            </div>
+          </div>
+          <div class="pkt-full-body" id="pktFullBody">
+            ${messageHtml}
+            <div class="pkt-full-grid${hasMap ? '' : ' pkt-full-grid-nomap'}">
+              <div class="analytics-card pkt-meta-card">
+                <h3>Packet Details</h3>
+                <dl class="pkt-full-dl">
+                  <dt>Observer</dt><dd>${obsName(pkt.observer_id, pkt.observer_name)}</dd>
+                  <dt>Timestamp</dt><dd>${pkt.timestamp}</dd>
+                  <dt>Payload Type</dt><dd><span class="badge badge-${payloadTypeColor(pkt.payload_type)}">${typeName}</span></dd>
+                  <dt>Route Type</dt><dd>${routeTypeName(pkt.route_type)}</dd>
+                  ${hashSize ? `<dt>Hash Size</dt><dd>${hashSize} byte${hashSize !== 1 ? 's' : ''}</dd>` : ''}
+                  <dt>SNR / RSSI</dt><dd>${snr != null ? snr + ' dB' : '—'} / ${rssi != null ? rssi + ' dBm' : '—'}</dd>
+                  <dt>Propagation</dt><dd>${propagationHtml}</dd>
+                  <dt>Location</dt><dd id="pktFullLocation">${locationHtml}</dd>
+                  <dt>Path</dt><dd>${pathHops.length ? renderPath(pathHops, pkt.observer_id) : '—'}</dd>
+                </dl>
+                ${pathHops.length ? `<div class="pkt-meta-actions"><button class="detail-map-link" id="pktFullRouteBtn">🗺️ View route on map</button></div>` : ''}
+              </div>
+              ${hasMap ? `<div class="analytics-card pkt-map-card"><h3>Route Map</h3><div id="pktDetailMap" class="pkt-detail-map"></div></div>` : ''}
+            </div>
+            <div class="analytics-card">
+              <h3>${hasRawHex ? `Byte Breakdown (${size} bytes)` : 'Decoded Payload'}</h3>
+              ${hasRawHex ? `<div class="hex-legend">${buildHexLegend(ranges)}</div><div class="hex-dump">${createColoredHexDump(pkt.raw_hex, ranges)}</div>` : ''}
+              <div class="field-table-wrap">${hasRawHex ? buildFieldTable(pkt, decoded, pathHops, ranges) : buildDecodedTable(decoded)}</div>
+            </div>
+          </div>
+        `;
+
+        app.innerHTML = '';
+        app.appendChild(page);
+
+        // Back button
+        page.querySelector('#pktBackBtn').addEventListener('click', () => history.back());
+
+        // Replay button
+        page.querySelector('#pktFullReplayBtn')?.addEventListener('click', () => {
+          const obs = data.observations || [];
+          const pkts = obs.length > 1 ? obs.map(o => {
+            let oPath; try { oPath = JSON.parse(o.path_json || '[]'); } catch { oPath = pathHops; }
+            let oDec; try { oDec = JSON.parse(o.decoded_json || '{}'); } catch { oDec = decoded; }
+            return { id: o.id, hash: pkt.hash, raw: o.raw_hex || pkt.raw_hex, _ts: new Date(o.timestamp).getTime(), decoded: { header: { payloadTypeName: typeName }, payload: oDec, path: { hops: oPath } }, snr: o.snr, rssi: o.rssi, observer: obsName(o.observer_id) };
+          }) : [{ id: pkt.id, hash: pkt.hash, raw: pkt.raw_hex, _ts: new Date(pkt.timestamp).getTime(), decoded: { header: { payloadTypeName: typeName }, payload: decoded, path: { hops: pathHops } }, snr: pkt.snr, rssi: pkt.rssi, observer: obsName(pkt.observer_id) }];
+          sessionStorage.setItem('replay-packet', JSON.stringify(pkts));
+          goto('/live');
+        });
+
+        // View route on map button
+        page.querySelector('#pktFullRouteBtn')?.addEventListener('click', async () => {
+          try {
+            await ensureHopResolver();
+            const sLat = decoded.lat || decoded.latitude || null;
+            const sLon = decoded.lon || decoded.longitude || null;
+            const res = HopResolver.resolve(pathHops, sLat, sLon, null, null, pkt.observer_id);
+            const keys = pathHops.map(h => { const r = res?.[h]; return r?.pubkey || h; });
+            const origin = {};
+            if (decoded.pubKey) origin.pubkey = decoded.pubKey;
+            else if (decoded.srcHash) origin.pubkey = decoded.srcHash;
+            if (decoded.adName || decoded.name) origin.name = decoded.adName || decoded.name;
+            if (sLat != null && sLon != null) { origin.lat = sLat; origin.lon = sLon; }
+            sessionStorage.setItem('map-route-hops', JSON.stringify({ origin, hops: keys }));
+            goto('/map?route=1');
+          } catch { goto('/map'); }
+        });
+
+        // Async location fallback (resolve sender node GPS if not in packet)
+        if (locationHtml === '—') {
+          const senderKey = decoded.pubKey || decoded.srcPubKey;
+          const senderName = decoded.sender || decoded.name;
+          if (senderKey || senderName) {
+            (async () => {
+              try {
+                const nd = senderKey ? await api(`/nodes/${senderKey}`, { ttl: 30000 }).catch(() => null) : null;
+                let loc = null;
+                if (nd?.node?.lat && nd.node.lon) {
+                  const n = nd.node;
+                  loc = `${n.lat.toFixed(5)}, ${n.lon.toFixed(5)}`;
+                  if (n.name) loc = `${escapeHtml(n.name)} — ${loc}`;
+                  loc += ` <a href="/map?node=${encodeURIComponent(n.public_key)}" style="color:var(--accent);font-size:0.85em">📍 map</a>`;
+                } else if (senderName) {
+                  const sd = await api(`/nodes/search?q=${encodeURIComponent(senderName)}`, { ttl: 30000 }).catch(() => null);
+                  const m = sd?.nodes?.[0];
+                  if (m?.lat && m.lon) {
+                    loc = `${m.lat.toFixed(5)}, ${m.lon.toFixed(5)}`;
+                    if (m.name) loc = `${escapeHtml(m.name)} — ${loc}`;
+                    loc += ` <a href="/map?node=${encodeURIComponent(m.public_key)}" style="color:var(--accent);font-size:0.85em">📍 map</a>`;
+                  }
+                }
+                if (loc) { const el = document.getElementById('pktFullLocation'); if (el) el.innerHTML = loc; }
+              } catch {}
+            })();
+          }
+        }
+
+        // Render inline Leaflet map
+        if (hasMap) {
           const leafMap = L.map('pktDetailMap');
           L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '© OpenStreetMap contributors', maxZoom: 19
           }).addTo(leafMap);
 
-          await ensureHopResolver();
-          let decoded2 = {};
-          try { decoded2 = JSON.parse(data.packet.decoded_json || '{}'); } catch {}
-          const senderLat = decoded2.lat || decoded2.latitude || null;
-          const senderLon = decoded2.lon || decoded2.longitude || null;
-
-          const resolved = HopResolver.resolve(hops, senderLat, senderLon, null, null, data.packet.observer_id);
-          const resolvedKeys = hops.map(h => { const r = resolved?.[h]; return r?.pubkey || h; });
+          const sLat = decoded.lat || decoded.latitude || null;
+          const sLon = decoded.lon || decoded.longitude || null;
+          const res2 = HopResolver.resolve(pathHops, sLat, sLon, null, null, pkt.observer_id);
+          const keys2 = pathHops.map(h => { const r = res2?.[h]; return r?.pubkey || h; });
 
           const nodesData = await api('/nodes?limit=10000', { ttl: 60000 });
           const allNodes = nodesData.nodes || [];
 
-          const raw = resolvedKeys.map(hop => {
-            const hopLower = hop.toLowerCase();
-            const candidates = allNodes.filter(n => {
+          const raw = keys2.map(hop => {
+            const hl = hop.toLowerCase();
+            const cands = allNodes.filter(n => {
               const pk = n.public_key.toLowerCase();
-              return (pk === hopLower || pk.startsWith(hopLower) || hopLower.startsWith(pk)) &&
-                n.lat != null && n.lon != null && !(n.lat === 0 && n.lon === 0);
+              return (pk === hl || pk.startsWith(hl) || hl.startsWith(pk)) && n.lat != null && n.lon != null && !(n.lat === 0 && n.lon === 0);
             });
-            if (candidates.length === 1) {
-              const c = candidates[0];
-              return { lat: c.lat, lon: c.lon, name: c.name || hop.slice(0, 8), pubkey: c.public_key, resolved: true };
-            } else if (candidates.length > 1) {
-              return { name: hop.slice(0, 8), resolved: false, candidates };
-            }
+            if (cands.length === 1) { const c = cands[0]; return { lat: c.lat, lon: c.lon, name: c.name || hop.slice(0, 8), pubkey: c.public_key, resolved: true }; }
+            if (cands.length > 1) return { name: hop.slice(0, 8), resolved: false, candidates: cands };
             return null;
           });
 
-          const knownPos = raw.filter(h => h && h.resolved);
-          if (knownPos.length > 0) {
-            const cLat = knownPos.reduce((s, p) => s + p.lat, 0) / knownPos.length;
-            const cLon = knownPos.reduce((s, p) => s + p.lon, 0) / knownPos.length;
-            const dist = (lat, lon) => Math.sqrt((lat - cLat) ** 2 + (lon - cLon) ** 2);
+          const known = raw.filter(h => h?.resolved);
+          if (known.length > 0) {
+            const cLat = known.reduce((s, p) => s + p.lat, 0) / known.length;
+            const cLon = known.reduce((s, p) => s + p.lon, 0) / known.length;
+            const dist = (la, lo) => Math.sqrt((la - cLat) ** 2 + (lo - cLon) ** 2);
             for (const hop of raw) {
               if (hop && !hop.resolved && hop.candidates) {
                 hop.candidates.sort((a, b) => dist(a.lat, a.lon) - dist(b.lat, b.lon));
@@ -1866,53 +2015,34 @@
             }
           }
 
-          const positions = raw.filter(h => h && h.resolved);
-
-          // Prepend origin/sender if available
-          if (senderLat != null && senderLon != null) {
-            positions.unshift({ lat: senderLat, lon: senderLon, name: decoded2.adName || decoded2.name || 'Sender', pubkey: decoded2.pubKey || null, isOrigin: true });
-          } else if (decoded2.pubKey) {
-            const pk = decoded2.pubKey.toLowerCase();
-            const match = allNodes.find(n => n.public_key.toLowerCase() === pk || n.public_key.toLowerCase().startsWith(pk));
-            if (match && match.lat != null && match.lon != null) {
-              positions.unshift({ lat: match.lat, lon: match.lon, name: decoded2.adName || decoded2.name || match.name || 'Sender', pubkey: match.public_key, isOrigin: true });
-            }
+          const positions = raw.filter(h => h?.resolved);
+          if (sLat != null && sLon != null) {
+            positions.unshift({ lat: sLat, lon: sLon, name: decoded.adName || decoded.name || 'Sender', pubkey: decoded.pubKey || null, isOrigin: true });
+          } else if (decoded.pubKey) {
+            const pk = decoded.pubKey.toLowerCase();
+            const m = allNodes.find(n => n.public_key.toLowerCase() === pk || n.public_key.toLowerCase().startsWith(pk));
+            if (m?.lat != null && m.lon != null) positions.unshift({ lat: m.lat, lon: m.lon, name: decoded.adName || decoded.name || m.name || 'Sender', pubkey: m.public_key, isOrigin: true });
           }
 
-          if (positions.length === 0) { mapSection.style.display = 'none'; return; }
+          if (positions.length === 0) { page.querySelector('.pkt-map-card')?.remove(); return; }
 
-          const routeLayer = L.layerGroup().addTo(leafMap);
+          const rl = L.layerGroup().addTo(leafMap);
           const coords = positions.map(p => [p.lat, p.lon]);
-
-          if (positions.length >= 2) {
-            L.polyline(coords, { color: '#f59e0b', weight: 3, opacity: 0.8, dashArray: '8 4' }).addTo(routeLayer);
-          }
-
+          if (positions.length >= 2) L.polyline(coords, { color: '#f59e0b', weight: 3, opacity: 0.8, dashArray: '8 4' }).addTo(rl);
           positions.forEach((p, i) => {
-            const isOrigin = i === 0 && p.isOrigin;
-            const isLast = i === positions.length - 1 && positions.length > 1;
+            const isOrigin = i === 0 && p.isOrigin, isLast = i === positions.length - 1 && positions.length > 1;
             const color = isOrigin ? '#06b6d4' : isLast ? '#ef4444' : i === 0 ? '#22c55e' : '#f59e0b';
-            const radius = isOrigin ? 14 : 10;
             const label = isOrigin ? 'Sender' : isLast ? 'Last Hop' : `Hop ${i}`;
-            if (isOrigin) {
-              L.circleMarker([p.lat, p.lon], { radius: radius + 4, fillColor: 'transparent', fillOpacity: 0, color: '#06b6d4', weight: 2, opacity: 0.6 }).addTo(routeLayer);
-            }
-            const marker = L.circleMarker([p.lat, p.lon], { radius, fillColor: color, fillOpacity: 0.9, color: '#fff', weight: 2 }).addTo(routeLayer);
-            const popupHtml = `<div style="font-size:12px;min-width:140px"><div style="font-weight:700;margin-bottom:4px">${label}: ${escapeHtml(p.name || '')}</div>${p.pubkey ? `<div style="font-family:monospace;font-size:10px;color:#6b7280;word-break:break-all;margin-bottom:4px">${escapeHtml(p.pubkey)}</div><a href="/nodes/${p.pubkey}" style="color:var(--accent);font-size:11px">View Node →</a>` : ''}</div>`;
-            marker.bindPopup(popupHtml, { className: 'route-popup' });
+            if (isOrigin) L.circleMarker([p.lat, p.lon], { radius: 18, fillColor: 'transparent', fillOpacity: 0, color: '#06b6d4', weight: 2, opacity: 0.6 }).addTo(rl);
+            L.circleMarker([p.lat, p.lon], { radius: isOrigin ? 14 : 10, fillColor: color, fillOpacity: 0.9, color: '#fff', weight: 2 }).addTo(rl)
+              .bindPopup(`<div style="font-size:12px;min-width:140px"><div style="font-weight:700;margin-bottom:4px">${label}: ${escapeHtml(p.name || '')}</div>${p.pubkey ? `<div style="font-family:monospace;font-size:10px;color:#6b7280;word-break:break-all;margin-bottom:4px">${escapeHtml(p.pubkey)}</div><a href="/nodes/${p.pubkey}" style="color:var(--accent);font-size:11px">View Node →</a>` : ''}</div>`, { className: 'route-popup' });
           });
-
-          if (coords.length >= 2) {
-            leafMap.fitBounds(L.latLngBounds(coords).pad(0.3));
-          } else {
-            leafMap.setView(coords[0], 13);
-          }
-        } else {
-          app.innerHTML = '';
-          app.appendChild(container);
+          if (coords.length >= 2) leafMap.fitBounds(L.latLngBounds(coords).pad(0.3));
+          else leafMap.setView(coords[0], 13);
         }
+
       } catch (e) {
-        app.innerHTML = `<div class="packet-detail-page" style="text-align:center;padding-top:40px"><h2>Error</h2><p>${e.message}</p><a href="/packets">← Back to packets</a></div>`;
+        app.innerHTML = `<div class="pkt-full-page"><div class="pkt-full-header"><button class="detail-back-btn pill-btn" onclick="history.back()">← Back</button></div><div class="pkt-full-body" style="align-items:center;justify-content:center;flex-direction:column;gap:12px"><h2>Error</h2><p style="color:var(--text-muted)">${escapeHtml(e.message)}</p></div></div>`;
       }
     },
     destroy: () => {}
