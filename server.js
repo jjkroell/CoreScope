@@ -113,6 +113,9 @@ function getCachedNodes(includeRole) {
 
 const configuredChannelKeys = config.channelKeys || {};
 const hashChannels = Array.isArray(config.hashChannels) ? config.hashChannels : [];
+const blockedChannels = new Set(
+  (Array.isArray(config.blockedChannels) ? config.blockedChannels : []).map(c => c.toLowerCase())
+);
 
 const derivedHashChannelKeys = {};
 for (const rawChannel of hashChannels) {
@@ -743,7 +746,7 @@ for (const source of mqttSources) {
 
         if (decoded.header.payloadTypeName === 'GRP_TXT') {
           const _ch = decoded.payload?.channel;
-          if (_ch && approvedChannels.has(_ch)) {
+          if (_ch) {
             broadcast({ type: 'message', data: broadcastData });
           }
         }
@@ -820,8 +823,6 @@ for (const source of mqttSources) {
         channelMsg.channel = resolvedChannelName;
         // Drop blocked channels
         if (blockedChannels.has(resolvedChannelName.toLowerCase())) return;
-        // Auto-learn if it's a proper named channel
-        if (resolvedChannelName.startsWith('#')) autoLearnChannel(resolvedChannelName);
         // Extract sender name from "Name: message" format
         const senderName = channelMsg.text?.split(':')[0] || null;
         // Create/update node for sender
@@ -927,16 +928,10 @@ app.get('/api/stats', (req, res) => {
 app.get('/api/packets', (req, res) => {
   const { limit = 50, offset = 0, type, route, region, observer, hash, since, until, groupByHash, node, nodes } = req.query;
   const order = req.query.order === 'asc' ? 'ASC' : 'DESC';
-  const bObs = getBoundaryObserverIds();
+  const bObs = null;
 
-  // Build set of node pubkeys with coordinates OUTSIDE the boundary — used to exclude relayed foreign packets
+  // Boundary filtering removed — outsideNodes always null
   let outsideNodes = null;
-  if (configBoundary) {
-    outsideNodes = new Set();
-    for (const n of db.db.prepare('SELECT public_key, lat, lon FROM nodes WHERE lat IS NOT NULL AND lon IS NOT NULL AND lat != 0 AND lon != 0').all()) {
-      if (!isPointInPolygon(n.lat, n.lon, configBoundary)) outsideNodes.add(n.public_key?.toLowerCase());
-    }
-  }
 
   // inBoundary: packet must be received by an in-boundary observer AND not originate from a known outside-boundary node
   const inBoundary = bObs ? (p => {
@@ -1194,48 +1189,14 @@ app.get('/api/nodes', (req, res) => {
     }
   }
 
-  const counts = {};
-  if (filteredAll) {
-    for (const r of ['repeater', 'room', 'companion', 'sensor']) {
-      counts[r + 's'] = filteredAll.filter(n => n.role === r).length;
-    }
-  } else {
-    for (const r of ['repeater', 'room', 'companion', 'sensor']) {
-      counts[r + 's'] = db.db.prepare(`SELECT COUNT(*) as count FROM nodes WHERE role = ?`).get(r).count;
-    }
-  }
-
-  // Use precomputed hash_size map (rebuilt at startup, updated on new packets)
-  for (const node of nodes) {
-    node.hash_size = _hashSizeMap.get(node.public_key) || null;
-    const allSizes = _hashSizeAllMap.get(node.public_key);
-    node.hash_size_inconsistent = _isHashSizeFlipFlop(node.public_key);
-    if (allSizes && allSizes.size > 1) node.hash_sizes_seen = [...allSizes].sort();
-    // Compute lastHeard from in-memory packets (more accurate than DB last_seen)
-    const nodePkts = pktStore.byNode.get(node.public_key);
-    if (nodePkts && nodePkts.length > 0) {
-      let latest = null;
-      for (const p of nodePkts) {
-        if (!latest || p.timestamp > latest) latest = p.timestamp;
-      }
-      if (latest) node.last_heard = latest;
-    }
-  }
-
-  res.json({ nodes: nodes.map(anonNode), total, counts });
+  res.json({ nodes, total, counts });
 });
 
 app.get('/api/nodes/search', (req, res) => {
   const q = req.query.q || '';
   if (!q.trim()) return res.json({ nodes: [] });
   let nodes = db.searchNodes(q.trim());
-  if (configBoundary) {
-    nodes = nodes.filter(n =>
-      n.lat && n.lon && !(n.lat === 0 && n.lon === 0) &&
-      isPointInPolygon(n.lat, n.lon, configBoundary)
-    );
-  }
-  res.json({ nodes: nodes.map(anonNode) });
+  res.json({ nodes });
 });
 
 // Bulk health summary for analytics — single query approach (MUST be before :pubkey routes)
@@ -1305,7 +1266,7 @@ app.get('/api/nodes/bulk-health', (req, res) => {
       }))
       .sort((a, b) => b.packetCount - a.packetCount);
 
-    const _an = anonNode(node);
+    const _an = node;
     results.push({
       public_key: node.public_key, name: node.name, role: node.role,
       lat: _an.lat, lon: _an.lon,
@@ -1371,7 +1332,7 @@ app.get('/api/nodes/:pubkey', (req, res) => {
   node.hash_size_inconsistent = _isHashSizeFlipFlop(pubkey);
   if (allSizes && allSizes.size > 1) node.hash_sizes_seen = [...allSizes].sort();
   const recentAdverts = (pktStore.byNode.get(pubkey) || []).slice(-20).reverse();
-  const _nResult = { node: anonNode(node), recentAdverts };
+  const _nResult = { node: node, recentAdverts };
   cache.set(_ck, _nResult, TTL.nodeDetail);
   res.json(_nResult);
 });
@@ -2310,16 +2271,7 @@ app.get('/api/channels/:hash/messages', (req, res) => {
   const _ck = 'channels:' + channelHash + ':' + (req.query.limit||100) + ':' + (req.query.offset||0);
   const _c = cache.get(_ck); if (_c) return res.json(_c);
   const { limit = 100, offset = 0 } = req.query;
-  const msgBoundaryObs = getBoundaryObserverIds();
-  const packets = pktStore.filter(p => p.payload_type === 5 && (!msgBoundaryObs || msgBoundaryObs.has(p.observer_id))).sort((a,b) => a.timestamp > b.timestamp ? 1 : -1);
-
-  // Build sender name → location map for boundary filtering (case-insensitive)
-  const senderLocMap = new Map();
-  if (configBoundary) {
-    for (const n of db.db.prepare('SELECT name, lat, lon FROM nodes WHERE name IS NOT NULL AND lat IS NOT NULL AND lon IS NOT NULL AND lat != 0 AND lon != 0').all()) {
-      senderLocMap.set(n.name.toLowerCase(), { lat: n.lat, lon: n.lon });
-    }
-  }
+  const packets = pktStore.filter(p => p.payload_type === 5).sort((a,b) => a.timestamp > b.timestamp ? 1 : -1);
 
   // Group by message content + timestamp to deduplicate repeats
   const msgMap = new Map();
@@ -2353,11 +2305,6 @@ app.get('/api/channels/:hash/messages', (req, res) => {
           displaySender = decoded.text.slice(0, colonIdx);
           displayText = decoded.text.slice(colonIdx + 2);
         }
-      }
-      // Filter by sender location — if sender has a known location outside the boundary, skip
-      if (configBoundary && senderLocMap.size > 0) {
-        const senderLoc = senderLocMap.get(displaySender.toLowerCase());
-        if (senderLoc && !isPointInPolygon(senderLoc.lat, senderLoc.lon, configBoundary)) continue;
       }
       msgMap.set(dedupeKey, {
         sender: displaySender,
@@ -2404,19 +2351,6 @@ app.get('/api/observers', (req, res) => {
     const node = nodeMap.get(o.id?.toLowerCase());
     return { ...o, packetsLastHour: count, lat: node?.lat || null, lon: node?.lon || null, nodeRole: node?.role || null };
   });
-  // Filter by boundary if configured
-  if (configBoundary) {
-    result = result.filter(o => {
-      if (o.lat && o.lon && !(o.lat === 0 && o.lon === 0)) {
-        return isPointInPolygon(o.lat, o.lon, configBoundary);
-      }
-      if (o.iata && IATA_COORDS[o.iata]) {
-        const { lat, lon } = IATA_COORDS[o.iata];
-        return isPointInPolygon(lat, lon, configBoundary);
-      }
-      return false; // no location info → exclude when boundary is active
-    });
-  }
   const _oResult = { observers: result, server_time: new Date().toISOString() };
   cache.set('observers', _oResult, TTL.observers);
   res.json(_oResult);
@@ -2509,9 +2443,7 @@ app.get('/api/observers/:id/analytics', (req, res) => {
 });
 
 app.get('/api/traces/:hash', (req, res) => {
-  const traceBoundaryObs = getBoundaryObserverIds();
   let packets = (pktStore.getSiblings(req.params.hash) || []).sort((a,b) => a.timestamp > b.timestamp ? 1 : -1);
-  if (traceBoundaryObs) packets = packets.filter(p => traceBoundaryObs.has(p.observer_id));
   const traces = packets.map(p => ({
     observer: p.observer_id,
     observer_name: p.observer_name || null,
@@ -2576,7 +2508,7 @@ app.get('/api/nodes/:pubkey/health', (req, res) => {
   });
 
   const result = {
-    node: anonNode(node.node || node), observers,
+    node: (node.node || node), observers,
     stats: {
       totalTransmissions: counts.transmissions,
       totalObservations: counts.observations,
@@ -2776,7 +2708,7 @@ app.get('/api/nodes/:pubkey/analytics', (req, res) => {
   const relayPct = totalWithPath > 0 ? Math.round(relayedCount / totalWithPath * 1000) / 10 : 0;
 
   const result = {
-    node: anonNode(node.node || node),
+    node: (node.node || node),
     timeRange: { from: fromISO, to: toISO, days },
     activityTimeline, snrTrend, packetTypeBreakdown, observerCoverage, hopDistribution, peerInteractions, uptimeHeatmap,
     computedStats: {

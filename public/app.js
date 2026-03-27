@@ -300,14 +300,13 @@ function registerPage(name, mod) { pages[name] = mod; }
 let currentPage = null;
 
 function goto(path) {
-  history.pushState(null, '', path);
-  navigate();
+  location.hash = '#' + (path.startsWith('/') ? path : '/' + path);
 }
 window.goto = goto;
 
 function navigate() {
-  const raw = location.pathname.replace(/^\//, '') || 'home';
-  const route = raw.split('?')[0];
+  const hash = (location.hash || '').replace(/^#\/?/, '') || 'home';
+  const route = hash.split('?')[0];
 
   // Handle parameterized routes: nodes/<pubkey> → nodes page + select
   let basePage = route;

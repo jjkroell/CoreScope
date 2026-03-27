@@ -658,6 +658,10 @@
       const marker = L.marker(pos, { icon: m.icon, alt: m.alt });
       marker._nodeKey = m.node.public_key || m.node.id || null;
       marker.bindPopup(m.popupFn(), { maxWidth: 280 });
+      marker.on('popupopen', function(e) {
+        const el = e.popup.getElement();
+        if (el) bindFavStars(el);
+      });
       markerLayer.addLayer(marker);
 
       if (m.offset > 10) {
