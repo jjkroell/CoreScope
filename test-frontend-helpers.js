@@ -1412,6 +1412,16 @@ console.log('\n=== channels.js: init + channel selection wiring ===');
     assert.strictEqual(env.getLastHistoryUrl(), '#/channels/%23test');
     assert.ok(env.getApiCalls().some(p => p.indexOf('/channels/%23test/messages') === 0), 'should request selected channel messages');
   });
+
+  test('channel list click outside item does not select or throw', () => {
+    const env = makeChannelsSandbox();
+    env.ctx.__channelsPage.init(env.app, null);
+    const click = env.listeners['chList:click'];
+    assert.ok(click, 'channel click handler should be registered');
+    click({ target: { closest: () => null } });
+    assert.strictEqual(env.getLastHistoryUrl(), null);
+    assert.ok(!env.getApiCalls().some(p => p.indexOf('/channels/%23test/messages') === 0), 'should not request messages without selection');
+  });
 }
 
 // ===== SUMMARY =====
