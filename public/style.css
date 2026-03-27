@@ -99,6 +99,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .top-nav {
   display: flex; align-items: center; justify-content: space-between;
   background: linear-gradient(135deg, var(--nav-bg) 0%, var(--nav-bg2) 100%); color: var(--nav-text); padding: 0 20px; height: 52px;
+  padding-left: max(20px, env(safe-area-inset-left)); padding-right: max(20px, env(safe-area-inset-right));
   position: sticky; top: 0; z-index: 1100;
   box-shadow: 0 2px 8px rgba(0,0,0,.3);
 }
@@ -166,7 +167,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .nav-stats .stat-val { color: var(--nav-text); font-weight: 600; }
 
 /* === Layout === */
-#app { height: calc(100vh - 52px); height: calc(100dvh - 52px); overflow: clip; }
+#app { height: calc(100vh - 52px); height: calc(100dvh - 52px); overflow: clip; padding-bottom: env(safe-area-inset-bottom); }
 
 .split-layout {
   display: flex; height: 100%; overflow: clip;
@@ -638,7 +639,7 @@ button.ch-item.selected .ch-badge {
 
 /* Table container */
 .nodes-table-wrap {
-  flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto;
+  flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; -webkit-overflow-scrolling: touch;
   padding: 0 24px 20px;
   background: var(--content-bg);
 }
@@ -847,7 +848,7 @@ button.ch-item.selected .ch-badge {
 
 /* Table container — matches nodes-table-wrap */
 .obs-table-wrap {
-  flex: 1; overflow-y: auto; overflow-x: auto;
+  flex: 1; overflow-y: auto; overflow-x: auto; -webkit-overflow-scrolling: touch;
   padding: 0 24px 20px; background: var(--content-bg);
 }
 .obs-table-wrap #obsTable {
@@ -911,7 +912,7 @@ button.ch-item.selected .ch-badge {
 
 /* Scrollable table area */
 .pkt-table-wrap {
-  flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto;
+  flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; -webkit-overflow-scrolling: touch;
   padding: 0 16px 16px;
   background: var(--content-bg);
 }
@@ -1118,7 +1119,7 @@ button.ch-item.selected .ch-badge {
   .filter-bar.filters-expanded select { width: 100%; }
   .filter-group { flex-wrap: wrap; }
   .filter-group + .filter-group { border-left: none; padding-left: 0; margin-left: 0; }
-  .filter-bar .btn { min-height: 40px; min-width: 40px; }
+  .filter-bar .btn { min-height: 44px; min-width: 44px; }
   .node-filter-wrap { width: 100%; }
   .ch-back-btn { min-width: 44px; min-height: 44px; padding: 0 12px; }
   .panel-close-btn { min-width: 44px; min-height: 44px; font-size: 20px; }
@@ -1706,7 +1707,7 @@ tr[data-hops]:hover { background: rgba(59,130,246,0.1); }
 .suggest-claim { min-height: 44px; min-width: 44px; padding: 10px 14px; display: inline-flex; align-items: center; justify-content: center; }
 
 /* #41 — Lower My Nodes grid minimum to prevent overflow on 375-640px */
-.my-nodes-grid { max-width: 1200px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+.my-nodes-grid { max-width: 1200px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
 
 /* #42 — Stats cards: use grid with max-width per card on wide screens */
 .home-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 200px)); justify-content: center; }
@@ -1728,6 +1729,7 @@ tr[data-hops]:hover { background: rgba(59,130,246,0.1); }
 /* #20 — Observers table horizontal scroll on mobile */
 .obs-table-wrap .obs-table { min-width: 640px; }
 @media (max-width: 640px) {
+  .obs-table-wrap { overflow-x: auto; }
   .spark-bar { min-width: 60px; width: auto; }
 }
 
@@ -1890,6 +1892,7 @@ tr[data-hops]:hover { background: rgba(59,130,246,0.1); }
 .analytics-peer-table td { padding: 6px 8px; border-bottom: 1px solid var(--border); }
 .analytics-peer-table tr:hover td { background: var(--card-bg); }
 @media (max-width: 768px) { .analytics-stats { grid-template-columns: repeat(2, 1fr); } .analytics-charts { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .analytics-charts { grid-template-columns: 1fr; } }
 @media (max-width: 480px) { .analytics-stats { grid-template-columns: 1fr; } }
 
 /* Embedded analytics — compact overrides for node info panel */
@@ -1906,7 +1909,7 @@ tr[data-hops]:hover { background: rgba(59,130,246,0.1); }
 #nodeAnalyticsEmbed .analytics-chart-card.full canvas { max-height: 180px; }
 #nodeAnalyticsEmbed .analytics-heatmap { grid-template-columns: 22px repeat(24, 1fr); gap: 1px; }
 #nodeAnalyticsEmbed .analytics-heatmap-cell { height: 12px; border-radius: 1px; }
-#nodeAnalyticsEmbed .analytics-heatmap-label { font-size: 7px; line-height: 8px; }
+#nodeAnalyticsEmbed .analytics-heatmap-label { font-size: 9px; line-height: 10px; }
 #nodeAnalyticsEmbed .analytics-time-range { gap: 4px; margin-bottom: 8px; }
 #nodeAnalyticsEmbed .analytics-time-range button { padding: 2px 7px; font-size: 10px; }
 #nodeAnalyticsEmbed .analytics-peer-table { font-size: 10px; }
@@ -1959,7 +1962,7 @@ tr[data-hops]:hover { background: rgba(59,130,246,0.1); }
 
 /* ─── Region filter bar ─── */
 .region-filter-bar { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 0; }
-.ch-sidebar .region-filter-bar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 6px 0; gap: 4px; }
+.ch-sidebar .region-filter-bar { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; padding: 6px 0; gap: 4px; }
 .ch-sidebar .region-filter-bar::-webkit-scrollbar { display: none; }
 .region-filter-container { margin: 0; padding: 0; display: inline-flex; align-items: center; }
 .region-pill {
@@ -2220,19 +2223,20 @@ tr[data-hops]:hover { background: rgba(59,130,246,0.1); }
 
 /* === Responsive — Small phones (≤480px) === */
 @media (max-width: 480px) {
-  .data-table { font-size: 10px; }
+  .data-table { font-size: 11px; }
   .data-table td { padding: 4px 3px; max-width: 90px; }
-  .data-table th { padding: 4px 3px; font-size: 9px; }
+  .data-table th { padding: 4px 3px; font-size: 10px; }
   .analytics-table { font-size: 10px; }
   .fav-grid { grid-template-columns: 1fr; }
   .stats-grid { grid-template-columns: repeat(2, 1fr); }
   .my-nodes-grid { grid-template-columns: 1fr; }
   .search-overlay { padding-top: 40px; align-items: flex-start; }
-  .search-box { width: 100vw; border-radius: 0 0 12px 12px; }
-  .modal { width: 100vw; border-radius: 12px 12px 0 0; position: fixed; bottom: 0; margin: 0; }
+  .search-box { width: calc(100vw - 16px); margin-left: 8px; margin-right: 8px; border-radius: 0 0 12px 12px; }
+  .modal { width: auto; left: 8px; right: 8px; border-radius: 12px 12px 0 0; position: fixed; bottom: 0; margin: 0; }
   .home-stat .val { font-size: 1.1rem; }
   .ch-msg { gap: 8px; }
-  .ch-avatar { width: 32px; height: 32px; min-width: 32px; font-size: 13px; }
+  .ch-avatar { width: 40px; height: 40px; min-width: 40px; font-size: 13px; }
+  .ch-avatar.ch-tappable { min-width: 44px; min-height: 44px; width: 44px; height: 44px; }
   .ch-msg-bubble { font-size: 13px; }
   .region-pill { padding: 3px 7px; font-size: 11px; }
   .tab-btn { padding: 5px 10px; font-size: 12px; }
