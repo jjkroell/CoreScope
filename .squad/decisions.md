@@ -10,7 +10,7 @@
 - **Region:** westus2
 - **Size:** Standard_D2as_v5 (Linux)
 - **Public IP:** 20.80.179.254
-- **SSH User:** iavor
+- **SSH User:** deploy
 - **SSH Command:** `ssh deploy@20.80.179.254`
 - **Azure CLI:** v2.84.0 (upgraded from 2.11.1 this session — stale .pyc files cleared)
 - **CI Runner:** self-hosted on this same VM ("meshcore-vm")
