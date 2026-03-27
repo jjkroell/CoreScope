@@ -312,6 +312,45 @@ function rebuildHashSizeMap(packets, hashSizeMap, hashSizeAllMap, hashSizeSeqMap
   }
 }
 
+// Deterministic location anonymization — consistent per-node, ~200m radius
+// Uses the public key as a seed so the same node always gets the same offset.
+function _locHash(pk, salt) {
+  let h = (salt >>> 0) ^ 0x12345678;
+  for (let i = 0; i < Math.min(pk.length, 32); i++) {
+    h = Math.imul(h ^ pk.charCodeAt(i), 0x9e3779b9) >>> 0;
+  }
+  h = Math.imul(h ^ (h >>> 16), 0x85ebca6b) >>> 0;
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35) >>> 0;
+  return ((h ^ (h >>> 16)) >>> 0) / 0xFFFFFFFF; // [0, 1]
+}
+
+function anonymizeNodeLocation(node) {
+  if (!node) return node;
+  const lat = node.lat, lon = node.lon;
+  if (!lat || !lon || (lat === 0 && lon === 0)) return node;
+  const pk = (node.public_key || '').toLowerCase();
+  if (!pk) return node;
+
+  // ~100 m in degrees: 0.0009° lat, lon scaled by cos(lat) for accuracy
+  const MAX_M = 100;
+  const DEG_PER_M_LAT = 1 / 111320;
+  const DEG_PER_M_LON = 1 / (111320 * Math.cos(lat * Math.PI / 180));
+
+  // Map [0,1] floats to [-1, 1]
+  const latFrac = _locHash(pk, 0xA1B2C3D4) * 2 - 1;
+  const lonFrac = _locHash(pk, 0xDEADBEEF) * 2 - 1;
+
+  // Clamp to circle: scale down if outside unit circle
+  const mag = Math.sqrt(latFrac * latFrac + lonFrac * lonFrac);
+  const scale = mag > 1 ? 1 / mag : 1;
+
+  return {
+    ...node,
+    lat: lat + latFrac * scale * MAX_M * DEG_PER_M_LAT,
+    lon: lon + lonFrac * scale * MAX_M * DEG_PER_M_LON
+  };
+}
+
 // API key middleware factory
 function requireApiKey(apiKey) {
   return function(req, res, next) {
@@ -337,6 +376,7 @@ module.exports = {
   updateHashSizeForPacket,
   rebuildHashSizeMap,
   requireApiKey,
+  anonymizeNodeLocation,
   CONFIG_PATHS,
   THEME_PATHS
 };

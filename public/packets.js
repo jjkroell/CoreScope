@@ -1359,6 +1359,7 @@
       </dl>
       <div class="detail-actions">
         ${pathHops.length ? `<button class="detail-map-link" id="viewRouteBtn">🗺️ View route on map</button>` : ''}
+        ${pathHops.length && pkt.hash ? `<a href="/packet/${pkt.hash}" class="detail-map-link" style="text-decoration:none">↗ Full page</a>` : ''}
         ${pkt.hash ? `<a href="/traces/${pkt.hash}" class="detail-map-link" style="text-decoration:none">🔍 Trace</a>` : ''}
         <button class="replay-live-btn" title="Replay this packet on the live map">▶ Replay</button>
       </div>
@@ -1806,8 +1807,110 @@
         const detail = document.createElement('div');
         container.appendChild(detail);
         await renderDetail(detail, data);
-        app.innerHTML = '';
-        app.appendChild(container);
+
+        // Auto-render route map if packet has path hops
+        if (hops.length > 0) {
+          const mapSection = document.createElement('div');
+          mapSection.style.cssText = 'margin-top:24px';
+          mapSection.innerHTML = `<div style="font-weight:600;margin-bottom:8px;color:var(--text);font-size:14px">Route Map</div><div id="pktDetailMap" style="height:400px;border-radius:8px;overflow:hidden;border:1px solid var(--border)"></div>`;
+          container.appendChild(mapSection);
+
+          app.innerHTML = '';
+          app.appendChild(container);
+
+          // Initialize Leaflet map after insertion into DOM
+          const leafMap = L.map('pktDetailMap');
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors', maxZoom: 19
+          }).addTo(leafMap);
+
+          await ensureHopResolver();
+          let decoded2 = {};
+          try { decoded2 = JSON.parse(data.packet.decoded_json || '{}'); } catch {}
+          const senderLat = decoded2.lat || decoded2.latitude || null;
+          const senderLon = decoded2.lon || decoded2.longitude || null;
+
+          const resolved = HopResolver.resolve(hops, senderLat, senderLon, null, null, data.packet.observer_id);
+          const resolvedKeys = hops.map(h => { const r = resolved?.[h]; return r?.pubkey || h; });
+
+          const nodesData = await api('/nodes?limit=10000', { ttl: 60000 });
+          const allNodes = nodesData.nodes || [];
+
+          const raw = resolvedKeys.map(hop => {
+            const hopLower = hop.toLowerCase();
+            const candidates = allNodes.filter(n => {
+              const pk = n.public_key.toLowerCase();
+              return (pk === hopLower || pk.startsWith(hopLower) || hopLower.startsWith(pk)) &&
+                n.lat != null && n.lon != null && !(n.lat === 0 && n.lon === 0);
+            });
+            if (candidates.length === 1) {
+              const c = candidates[0];
+              return { lat: c.lat, lon: c.lon, name: c.name || hop.slice(0, 8), pubkey: c.public_key, resolved: true };
+            } else if (candidates.length > 1) {
+              return { name: hop.slice(0, 8), resolved: false, candidates };
+            }
+            return null;
+          });
+
+          const knownPos = raw.filter(h => h && h.resolved);
+          if (knownPos.length > 0) {
+            const cLat = knownPos.reduce((s, p) => s + p.lat, 0) / knownPos.length;
+            const cLon = knownPos.reduce((s, p) => s + p.lon, 0) / knownPos.length;
+            const dist = (lat, lon) => Math.sqrt((lat - cLat) ** 2 + (lon - cLon) ** 2);
+            for (const hop of raw) {
+              if (hop && !hop.resolved && hop.candidates) {
+                hop.candidates.sort((a, b) => dist(a.lat, a.lon) - dist(b.lat, b.lon));
+                const best = hop.candidates[0];
+                Object.assign(hop, { lat: best.lat, lon: best.lon, name: best.name || hop.name, pubkey: best.public_key, resolved: true });
+              }
+            }
+          }
+
+          const positions = raw.filter(h => h && h.resolved);
+
+          // Prepend origin/sender if available
+          if (senderLat != null && senderLon != null) {
+            positions.unshift({ lat: senderLat, lon: senderLon, name: decoded2.adName || decoded2.name || 'Sender', pubkey: decoded2.pubKey || null, isOrigin: true });
+          } else if (decoded2.pubKey) {
+            const pk = decoded2.pubKey.toLowerCase();
+            const match = allNodes.find(n => n.public_key.toLowerCase() === pk || n.public_key.toLowerCase().startsWith(pk));
+            if (match && match.lat != null && match.lon != null) {
+              positions.unshift({ lat: match.lat, lon: match.lon, name: decoded2.adName || decoded2.name || match.name || 'Sender', pubkey: match.public_key, isOrigin: true });
+            }
+          }
+
+          if (positions.length === 0) { mapSection.style.display = 'none'; return; }
+
+          const routeLayer = L.layerGroup().addTo(leafMap);
+          const coords = positions.map(p => [p.lat, p.lon]);
+
+          if (positions.length >= 2) {
+            L.polyline(coords, { color: '#f59e0b', weight: 3, opacity: 0.8, dashArray: '8 4' }).addTo(routeLayer);
+          }
+
+          positions.forEach((p, i) => {
+            const isOrigin = i === 0 && p.isOrigin;
+            const isLast = i === positions.length - 1 && positions.length > 1;
+            const color = isOrigin ? '#06b6d4' : isLast ? '#ef4444' : i === 0 ? '#22c55e' : '#f59e0b';
+            const radius = isOrigin ? 14 : 10;
+            const label = isOrigin ? 'Sender' : isLast ? 'Last Hop' : `Hop ${i}`;
+            if (isOrigin) {
+              L.circleMarker([p.lat, p.lon], { radius: radius + 4, fillColor: 'transparent', fillOpacity: 0, color: '#06b6d4', weight: 2, opacity: 0.6 }).addTo(routeLayer);
+            }
+            const marker = L.circleMarker([p.lat, p.lon], { radius, fillColor: color, fillOpacity: 0.9, color: '#fff', weight: 2 }).addTo(routeLayer);
+            const popupHtml = `<div style="font-size:12px;min-width:140px"><div style="font-weight:700;margin-bottom:4px">${label}: ${escapeHtml(p.name || '')}</div>${p.pubkey ? `<div style="font-family:monospace;font-size:10px;color:#6b7280;word-break:break-all;margin-bottom:4px">${escapeHtml(p.pubkey)}</div><a href="/nodes/${p.pubkey}" style="color:var(--accent);font-size:11px">View Node →</a>` : ''}</div>`;
+            marker.bindPopup(popupHtml, { className: 'route-popup' });
+          });
+
+          if (coords.length >= 2) {
+            leafMap.fitBounds(L.latLngBounds(coords).pad(0.3));
+          } else {
+            leafMap.setView(coords[0], 13);
+          }
+        } else {
+          app.innerHTML = '';
+          app.appendChild(container);
+        }
       } catch (e) {
         app.innerHTML = `<div style="max-width:800px;margin:0 auto;padding:40px;text-align:center"><h2>Error</h2><p>${e.message}</p><a href="/packets">← Back to packets</a></div>`;
       }

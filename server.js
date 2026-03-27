@@ -14,6 +14,7 @@ const { loadConfigFile, loadThemeFile, buildHealthConfig, getHealthMs: _getHealt
         updateHashSizeForPacket: _updateHashSizeForPacket,
         rebuildHashSizeMap: _rebuildHashSizeMap,
         requireApiKey: _requireApiKeyFactory,
+        anonymizeNodeLocation: _anonymizeNodeLocation,
         CONFIG_PATHS, THEME_PATHS } = helpers;
 const config = loadConfigFile();
 const configBoundary = Array.isArray(config.boundary?.coords) && config.boundary.coords.length >= 3
@@ -21,6 +22,22 @@ const configBoundary = Array.isArray(config.boundary?.coords) && config.boundary
 const decoder = require('./decoder');
 const PAYLOAD_TYPES = decoder.PAYLOAD_TYPES;
 const { nodeNearRegion, IATA_COORDS } = require('./iata-coords');
+
+// Location anonymization — jitters node coordinates by up to 200m
+const anonEnabled = !!config.anonymizeLocation;
+function anonNode(n) { return anonEnabled ? _anonymizeNodeLocation(n) : n; }
+// Anonymize lat/lon inside a decoded ADVERT payload before WebSocket broadcast
+function anonAdvertPayload(payload) {
+  if (!anonEnabled || !payload) return payload;
+  const pk = payload.pubKey || payload.pub_key || payload.public_key;
+  if (!pk || (payload.lat == null && payload.lon == null)) return payload;
+  const a = _anonymizeNodeLocation({ public_key: pk, lat: payload.lat ?? payload.latitude ?? null, lon: payload.lon ?? payload.lng ?? payload.longitude ?? null });
+  const out = { ...payload, lat: a.lat, lon: a.lon };
+  if ('latitude'  in payload) out.latitude  = a.lat;
+  if ('longitude' in payload) out.longitude = a.lon;
+  if ('lng'       in payload) out.lng       = a.lon;
+  return out;
+}
 
 // Health thresholds — configurable with sensible defaults
 const HEALTH = buildHealthConfig(config);
@@ -833,7 +850,8 @@ for (const source of mqttSources) {
         const fullPacket = pktStore.getById(packetId) || pktStore.byHash.get(pktData.hash) || pktData;
         const tx = pktStore.byHash.get(pktData.hash);
         const observation_count = tx ? tx.observation_count : 1;
-        const broadcastData = { id: packetId, raw: msg.raw, decoded, snr: msg.SNR, rssi: msg.RSSI, hash: pktData.hash, observer: observerId, packet: fullPacket, observation_count };
+        const _bDecoded = (anonEnabled && decoded?.payload) ? { ...decoded, payload: anonAdvertPayload(decoded.payload) } : decoded;
+        const broadcastData = { id: packetId, raw: msg.raw, decoded: _bDecoded, snr: msg.SNR, rssi: msg.RSSI, hash: pktData.hash, observer: observerId, packet: fullPacket, observation_count };
         broadcast({ type: 'packet', data: broadcastData });
 
         if (decoded.header.payloadTypeName === 'GRP_TXT') {
@@ -899,7 +917,7 @@ for (const source of mqttSources) {
           };
           const packetId = pktStore.insert(advertPktData); _updateHashSizeForPacketLocal(advertPktData);
           try { db.insertTransmission(advertPktData); } catch (e) { console.error('[dual-write] transmission insert error:', e.message); }
-          broadcast({ type: 'packet', data: { id: packetId, hash: advertPktData.hash, raw: advertPktData.raw_hex, decoded: { header: { payloadTypeName: 'ADVERT' }, payload: advert } } });
+          broadcast({ type: 'packet', data: { id: packetId, hash: advertPktData.hash, raw: advertPktData.raw_hex, decoded: { header: { payloadTypeName: 'ADVERT' }, payload: anonAdvertPayload(advert) } } });
         }
         return;
       }
@@ -1325,7 +1343,7 @@ app.get('/api/nodes', (req, res) => {
     }
   }
 
-  res.json({ nodes, total, counts });
+  res.json({ nodes: nodes.map(anonNode), total, counts });
 });
 
 app.get('/api/nodes/search', (req, res) => {
@@ -1338,7 +1356,7 @@ app.get('/api/nodes/search', (req, res) => {
       isPointInPolygon(n.lat, n.lon, configBoundary)
     );
   }
-  res.json({ nodes });
+  res.json({ nodes: nodes.map(anonNode) });
 });
 
 // Bulk health summary for analytics — single query approach (MUST be before :pubkey routes)
@@ -1408,9 +1426,10 @@ app.get('/api/nodes/bulk-health', (req, res) => {
       }))
       .sort((a, b) => b.packetCount - a.packetCount);
 
+    const _an = anonNode(node);
     results.push({
       public_key: node.public_key, name: node.name, role: node.role,
-      lat: node.lat, lon: node.lon,
+      lat: _an.lat, lon: _an.lon,
       stats: {
         totalTransmissions: packets.length,
         totalObservations,
@@ -1473,7 +1492,7 @@ app.get('/api/nodes/:pubkey', (req, res) => {
   node.hash_size_inconsistent = _isHashSizeFlipFlop(pubkey);
   if (allSizes && allSizes.size > 1) node.hash_sizes_seen = [...allSizes].sort();
   const recentAdverts = (pktStore.byNode.get(pubkey) || []).slice(-20).reverse();
-  const _nResult = { node, recentAdverts };
+  const _nResult = { node: anonNode(node), recentAdverts };
   cache.set(_ck, _nResult, TTL.nodeDetail);
   res.json(_nResult);
 });
@@ -2716,7 +2735,7 @@ app.get('/api/nodes/:pubkey/health', (req, res) => {
   });
 
   const result = {
-    node: node.node || node, observers,
+    node: anonNode(node.node || node), observers,
     stats: {
       totalTransmissions: counts.transmissions,
       totalObservations: counts.observations,
@@ -2916,7 +2935,7 @@ app.get('/api/nodes/:pubkey/analytics', (req, res) => {
   const relayPct = totalWithPath > 0 ? Math.round(relayedCount / totalWithPath * 1000) / 10 : 0;
 
   const result = {
-    node: node.node || node,
+    node: anonNode(node.node || node),
     timeRange: { from: fromISO, to: toISO, days },
     activityTimeline, snrTrend, packetTypeBreakdown, observerCoverage, hopDistribution, peerInteractions, uptimeHeatmap,
     computedStats: {
