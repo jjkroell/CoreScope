@@ -15,6 +15,7 @@ node test-packet-store.js
 node test-packet-filter.js
 node test-aging.js
 node test-frontend-helpers.js
+node test-observers.js
 node test-regional-filter.js
 node test-server-helpers.js
 node test-server-routes.js

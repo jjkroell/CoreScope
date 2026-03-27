@@ -6,6 +6,68 @@
   let wsHandler = null;
   let refreshTimer = null;
   let regionChangeHandler = null;
+  let sortState = (function () {
+    try {
+      const saved = JSON.parse(localStorage.getItem('meshcore-observers-sort'));
+      if (saved && saved.column && saved.direction) return saved;
+    } catch {}
+    return { column: 'last_seen', direction: 'desc' };
+  })();
+
+  function toggleSort(column) {
+    if (sortState.column === column) {
+      sortState.direction = sortState.direction === 'asc' ? 'desc' : 'asc';
+    } else {
+      const descDefault = ['last_seen', 'packet_count', 'packets_hr'];
+      sortState = { column, direction: descDefault.includes(column) ? 'desc' : 'asc' };
+    }
+    localStorage.setItem('meshcore-observers-sort', JSON.stringify(sortState));
+    render();
+  }
+
+  function sortObservers(arr) {
+    const col = sortState.column;
+    const dir = sortState.direction === 'asc' ? 1 : -1;
+    return arr.sort(function (a, b) {
+      let va = 0; let vb = 0;
+      if (col === 'status') {
+        const rank = { 'health-red': 0, 'health-yellow': 1, 'health-green': 2 };
+        va = rank[healthStatus(a.last_seen).cls] || 0;
+        vb = rank[healthStatus(b.last_seen).cls] || 0;
+        return (va - vb) * dir;
+      } else if (col === 'name') {
+        va = (a.name || a.id || '').toLowerCase();
+        vb = (b.name || b.id || '').toLowerCase();
+        return va < vb ? -dir : va > vb ? dir : 0;
+      } else if (col === 'region') {
+        va = (a.iata || '').toLowerCase();
+        vb = (b.iata || '').toLowerCase();
+        return va < vb ? -dir : va > vb ? dir : 0;
+      } else if (col === 'last_seen') {
+        va = a.last_seen ? new Date(a.last_seen).getTime() : 0;
+        vb = b.last_seen ? new Date(b.last_seen).getTime() : 0;
+        return (va - vb) * dir;
+      } else if (col === 'packet_count') {
+        va = a.packet_count || 0;
+        vb = b.packet_count || 0;
+        return (va - vb) * dir;
+      } else if (col === 'packets_hr') {
+        va = a.packetsLastHour || 0;
+        vb = b.packetsLastHour || 0;
+        return (va - vb) * dir;
+      } else if (col === 'uptime') {
+        va = a.first_seen ? new Date(a.first_seen).getTime() : Date.now();
+        vb = b.first_seen ? new Date(b.first_seen).getTime() : Date.now();
+        return (vb - va) * dir;
+      }
+      return 0;
+    });
+  }
+
+  function sortArrow(col) {
+    if (sortState.column !== col) return '';
+    return '<span class="sort-arrow">' + (sortState.direction === 'asc' ? '▲' : '▼') + '</span>';
+  }
 
   function init(app) {
     app.innerHTML = `
@@ -96,32 +158,34 @@
       return;
     }
 
-    const maxPktsHr = Math.max(1, ...filtered.map(o => o.packetsLastHour || 0));
+    const sorted = sortObservers(filtered.slice());
+
+    const maxPktsHr = Math.max(1, ...sorted.map(o => o.packetsLastHour || 0));
 
     // Summary counts
-    const online = filtered.filter(o => healthStatus(o.last_seen).cls === 'health-green').length;
-    const stale = filtered.filter(o => healthStatus(o.last_seen).cls === 'health-yellow').length;
-    const offline = filtered.filter(o => healthStatus(o.last_seen).cls === 'health-red').length;
+    const online = sorted.filter(o => healthStatus(o.last_seen).cls === 'health-green').length;
+    const stale = sorted.filter(o => healthStatus(o.last_seen).cls === 'health-yellow').length;
+    const offline = sorted.filter(o => healthStatus(o.last_seen).cls === 'health-red').length;
 
     el.innerHTML = `
       <div class="obs-summary">
         <span class="obs-stat"><span class="health-dot health-green">●</span> ${online} Online</span>
         <span class="obs-stat"><span class="health-dot health-yellow">▲</span> ${stale} Stale</span>
         <span class="obs-stat"><span class="health-dot health-red">✕</span> ${offline} Offline</span>
-        <span class="obs-stat">📡 ${filtered.length} Total</span>
+        <span class="obs-stat">📡 ${sorted.length} Total</span>
       </div>
       <div class="obs-table-wrap"><table class="data-table obs-table" id="obsTable">
         <caption class="sr-only">Observer status and statistics</caption>
         <thead><tr>
-          <th class="sortable${sortCol==='status'?' sort-active':''}" data-sort="status">Status${sortArrow('status')}</th>
-          <th class="sortable${sortCol==='name'?' sort-active':''}" data-sort="name">Name${sortArrow('name')}</th>
-          <th class="sortable${sortCol==='region'?' sort-active':''}" data-sort="region">Region${sortArrow('region')}</th>
-          <th class="sortable${sortCol==='last_seen'?' sort-active':''}" data-sort="last_seen">Last Seen${sortArrow('last_seen')}</th>
-          <th class="sortable${sortCol==='packet_count'?' sort-active':''}" data-sort="packet_count">Packets${sortArrow('packet_count')}</th>
-          <th class="sortable${sortCol==='packets_hr'?' sort-active':''}" data-sort="packets_hr">Packets/Hour${sortArrow('packets_hr')}</th>
-          <th class="sortable${sortCol==='uptime'?' sort-active':''}" data-sort="uptime">Uptime${sortArrow('uptime')}</th>
+          <th class="sortable${sortState.column==='status'?' sort-active':''}" data-sort="status">Status${sortArrow('status')}</th>
+          <th class="sortable${sortState.column==='name'?' sort-active':''}" data-sort="name">Name${sortArrow('name')}</th>
+          <th class="sortable${sortState.column==='region'?' sort-active':''}" data-sort="region">Region${sortArrow('region')}</th>
+          <th class="sortable${sortState.column==='last_seen'?' sort-active':''}" data-sort="last_seen">Last Seen${sortArrow('last_seen')}</th>
+          <th class="sortable${sortState.column==='packet_count'?' sort-active':''}" data-sort="packet_count">Packets${sortArrow('packet_count')}</th>
+          <th class="sortable${sortState.column==='packets_hr'?' sort-active':''}" data-sort="packets_hr">Packets/Hour${sortArrow('packets_hr')}</th>
+          <th class="sortable${sortState.column==='uptime'?' sort-active':''}" data-sort="uptime">Uptime${sortArrow('uptime')}</th>
         </tr></thead>
-        <tbody>${filtered.map(o => {
+        <tbody>${sorted.map(o => {
           const h = healthStatus(o.last_seen);
           const shape = h.cls === 'health-green' ? '●' : h.cls === 'health-yellow' ? '▲' : '✕';
           const statusRowCls = h.cls === 'health-green' ? 'obs-row-online' : h.cls === 'health-yellow' ? 'obs-row-stale' : 'obs-row-offline';
