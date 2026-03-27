@@ -29,7 +29,8 @@
     const col = sortState.column;
     const dir = sortState.direction === 'asc' ? 1 : -1;
     return arr.sort(function (a, b) {
-      let va = 0; let vb = 0;
+      let va = 0;
+      let vb = 0;
       if (col === 'status') {
         const rank = { 'health-red': 0, 'health-yellow': 1, 'health-green': 2 };
         va = rank[healthStatus(a.last_seen).cls] || 0;
