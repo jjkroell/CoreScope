@@ -161,6 +161,7 @@
 
   async function init(app, routeParam) {
     const gen = ++initGeneration;
+    filters = {};
     // Parse ?obs=OBSERVER_ID from routeParam
     if (routeParam && routeParam.includes('?')) {
       const qIdx = routeParam.indexOf('?');
