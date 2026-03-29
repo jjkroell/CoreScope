@@ -1019,6 +1019,7 @@
     let currentBytes = 1;
     function refreshHashViews(bytes) {
       currentBytes = bytes;
+      hideMatrixTip();
       // Update selector button states
       document.querySelectorAll('.hash-byte-btn').forEach(b => {
         b.classList.toggle('active', Number(b.dataset.bytes) === bytes);
@@ -1078,33 +1079,39 @@
 
   // Shared hover tooltip for hash matrix cells.
   // Called once per container — reads content from data-tip on each <td>.
+  // Single shared tooltip element for the entire hash matrix — avoids DOM accumulation on mode switch
+  let _matrixTip = null;
+  function getMatrixTip() {
+    if (!_matrixTip) {
+      _matrixTip = document.createElement('div');
+      _matrixTip.className = 'hash-matrix-tooltip';
+      _matrixTip.style.display = 'none';
+      document.body.appendChild(_matrixTip);
+    }
+    return _matrixTip;
+  }
+  function hideMatrixTip() { if (_matrixTip) _matrixTip.style.display = 'none'; }
+
   function initMatrixTooltip(el) {
     if (el._matrixTipInit) return;
     el._matrixTipInit = true;
-    let tip = null;
     el.addEventListener('mouseover', e => {
       const td = e.target.closest('td[data-tip]');
       if (!td) return;
-      if (!tip) {
-        tip = document.createElement('div');
-        tip.className = 'hash-matrix-tooltip';
-        document.body.appendChild(tip);
-      }
+      const tip = getMatrixTip();
       tip.innerHTML = td.dataset.tip;
       tip.style.display = 'block';
     });
     el.addEventListener('mousemove', e => {
-      if (!tip || tip.style.display === 'none') return;
+      if (!_matrixTip || _matrixTip.style.display === 'none') return;
       const x = e.clientX + 14, y = e.clientY + 14;
-      tip.style.left = Math.min(x, window.innerWidth - tip.offsetWidth - 8) + 'px';
-      tip.style.top = Math.min(y, window.innerHeight - tip.offsetHeight - 8) + 'px';
+      _matrixTip.style.left = Math.min(x, window.innerWidth - _matrixTip.offsetWidth - 8) + 'px';
+      _matrixTip.style.top = Math.min(y, window.innerHeight - _matrixTip.offsetHeight - 8) + 'px';
     });
     el.addEventListener('mouseout', e => {
-      if (e.target.closest('td[data-tip]') && !e.relatedTarget?.closest('td[data-tip]')) {
-        if (tip) tip.style.display = 'none';
-      }
+      if (e.target.closest('td[data-tip]') && !e.relatedTarget?.closest('td[data-tip]')) hideMatrixTip();
     });
-    el.addEventListener('mouseleave', () => { if (tip) tip.style.display = 'none'; });
+    el.addEventListener('mouseleave', hideMatrixTip);
   }
 
   function renderHashMatrix(topHops, allNodes, bytes, totalNodes) {
@@ -1155,11 +1162,12 @@
     const headerSize = 24;
 
     if (bytes === 1) {
-      // Build 1-byte prefix → nodes map
+      // Build 1-byte prefix → nodes map (single pass, O(n))
       const prefixNodes = {};
-      for (let i = 0; i < 256; i++) {
-        const hex = i.toString(16).padStart(2, '0').toUpperCase();
-        prefixNodes[hex] = allNodes.filter(n => n.public_key.toUpperCase().startsWith(hex));
+      for (let i = 0; i < 256; i++) prefixNodes[i.toString(16).padStart(2, '0').toUpperCase()] = [];
+      for (const n of allNodes) {
+        const hex = n.public_key.slice(0, 2).toUpperCase();
+        if (prefixNodes[hex]) prefixNodes[hex].push(n);
       }
       const oneByteCount = allNodes.filter(n => n.hash_size === 1).length;
       const oneUsed = Object.values(prefixNodes).filter(v => v.length > 0).length;
@@ -1238,27 +1246,25 @@
       });
 
     } else if (bytes === 2) {
-      // 2-byte mode: 16×16 grid of first-byte groups
-      // For each first-byte cell, find the worst 2-byte collision count within that group
+      // 2-byte mode: 16×16 grid of first-byte groups (single pass, O(n))
       const firstByteInfo = {};
       for (let i = 0; i < 256; i++) {
-        const firstHex = i.toString(16).padStart(2, '0').toUpperCase();
-        const groupNodes = allNodes.filter(n => n.public_key.toUpperCase().startsWith(firstHex));
-        if (!groupNodes.length) { firstByteInfo[firstHex] = { groupNodes: [], maxCollision: 0, collisionCount: 0 }; continue; }
-        // Build 2-byte prefix → nodes within this group
-        const twoByteMap = {};
-        for (const n of groupNodes) {
-          const twoHex = n.public_key.slice(0, 4).toUpperCase();
-          if (!twoByteMap[twoHex]) twoByteMap[twoHex] = [];
-          twoByteMap[twoHex].push(n);
-        }
-        const collisions = Object.values(twoByteMap).filter(v => v.length > 1);
-        firstByteInfo[firstHex] = {
-          groupNodes,
-          twoByteMap,
-          maxCollision: collisions.length ? Math.max(...collisions.map(v => v.length)) : 0,
-          collisionCount: collisions.length
-        };
+        const h = i.toString(16).padStart(2, '0').toUpperCase();
+        firstByteInfo[h] = { groupNodes: [], twoByteMap: {}, maxCollision: 0, collisionCount: 0 };
+      }
+      for (const n of allNodes) {
+        const firstHex = n.public_key.slice(0, 2).toUpperCase();
+        const twoHex = n.public_key.slice(0, 4).toUpperCase();
+        const info = firstByteInfo[firstHex];
+        if (!info) continue;
+        info.groupNodes.push(n);
+        if (!info.twoByteMap[twoHex]) info.twoByteMap[twoHex] = [];
+        info.twoByteMap[twoHex].push(n);
+      }
+      for (const info of Object.values(firstByteInfo)) {
+        const collisions = Object.values(info.twoByteMap).filter(v => v.length > 1);
+        info.collisionCount = collisions.length;
+        info.maxCollision = collisions.length ? Math.max(...collisions.map(v => v.length)) : 0;
       }
 
       const twoByteCount = allNodes.filter(n => n.hash_size === 2).length;
