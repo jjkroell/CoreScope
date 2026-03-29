@@ -1114,6 +1114,51 @@
     el.addEventListener('mouseleave', hideMatrixTip);
   }
 
+  // Pure data helpers — extracted for testability
+
+  function buildOneBytePrefixMap(nodes) {
+    const map = {};
+    for (let i = 0; i < 256; i++) map[i.toString(16).padStart(2, '0').toUpperCase()] = [];
+    for (const n of nodes) {
+      const hex = n.public_key.slice(0, 2).toUpperCase();
+      if (map[hex]) map[hex].push(n);
+    }
+    return map;
+  }
+
+  function buildTwoBytePrefixInfo(nodes) {
+    const info = {};
+    for (let i = 0; i < 256; i++) {
+      const h = i.toString(16).padStart(2, '0').toUpperCase();
+      info[h] = { groupNodes: [], twoByteMap: {}, maxCollision: 0, collisionCount: 0 };
+    }
+    for (const n of nodes) {
+      const firstHex = n.public_key.slice(0, 2).toUpperCase();
+      const twoHex = n.public_key.slice(0, 4).toUpperCase();
+      const entry = info[firstHex];
+      if (!entry) continue;
+      entry.groupNodes.push(n);
+      if (!entry.twoByteMap[twoHex]) entry.twoByteMap[twoHex] = [];
+      entry.twoByteMap[twoHex].push(n);
+    }
+    for (const entry of Object.values(info)) {
+      const collisions = Object.values(entry.twoByteMap).filter(v => v.length > 1);
+      entry.collisionCount = collisions.length;
+      entry.maxCollision = collisions.length ? Math.max(...collisions.map(v => v.length)) : 0;
+    }
+    return info;
+  }
+
+  function buildCollisionHops(allNodes, bytes) {
+    const map = {};
+    for (const n of allNodes) {
+      const p = n.public_key.slice(0, bytes * 2).toUpperCase();
+      if (!map[p]) map[p] = { hex: p, count: 0, size: bytes };
+      map[p].count++;
+    }
+    return Object.values(map).filter(h => h.count > 1);
+  }
+
   function renderHashMatrix(topHops, allNodes, bytes, totalNodes) {
     bytes = bytes || 1;
     totalNodes = totalNodes || allNodes;
@@ -1162,13 +1207,7 @@
     const headerSize = 24;
 
     if (bytes === 1) {
-      // Build 1-byte prefix → nodes map (single pass, O(n))
-      const prefixNodes = {};
-      for (let i = 0; i < 256; i++) prefixNodes[i.toString(16).padStart(2, '0').toUpperCase()] = [];
-      for (const n of allNodes) {
-        const hex = n.public_key.slice(0, 2).toUpperCase();
-        if (prefixNodes[hex]) prefixNodes[hex].push(n);
-      }
+      const prefixNodes = buildOneBytePrefixMap(allNodes);
       const oneByteCount = allNodes.filter(n => n.hash_size === 1).length;
       const oneUsed = Object.values(prefixNodes).filter(v => v.length > 0).length;
       const oneCollisions = Object.values(prefixNodes).filter(v => v.length > 1).length;
@@ -1246,26 +1285,8 @@
       });
 
     } else if (bytes === 2) {
-      // 2-byte mode: 16×16 grid of first-byte groups (single pass, O(n))
-      const firstByteInfo = {};
-      for (let i = 0; i < 256; i++) {
-        const h = i.toString(16).padStart(2, '0').toUpperCase();
-        firstByteInfo[h] = { groupNodes: [], twoByteMap: {}, maxCollision: 0, collisionCount: 0 };
-      }
-      for (const n of allNodes) {
-        const firstHex = n.public_key.slice(0, 2).toUpperCase();
-        const twoHex = n.public_key.slice(0, 4).toUpperCase();
-        const info = firstByteInfo[firstHex];
-        if (!info) continue;
-        info.groupNodes.push(n);
-        if (!info.twoByteMap[twoHex]) info.twoByteMap[twoHex] = [];
-        info.twoByteMap[twoHex].push(n);
-      }
-      for (const info of Object.values(firstByteInfo)) {
-        const collisions = Object.values(info.twoByteMap).filter(v => v.length > 1);
-        info.collisionCount = collisions.length;
-        info.maxCollision = collisions.length ? Math.max(...collisions.map(v => v.length)) : 0;
-      }
+      // 2-byte mode: 16×16 grid of first-byte groups
+      const firstByteInfo = buildTwoBytePrefixInfo(allNodes);
 
       const twoByteCount = allNodes.filter(n => n.hash_size === 2).length;
       const uniqueTwoBytePrefixes = new Set(allNodes.map(n => n.public_key.slice(0, 4).toUpperCase())).size;
@@ -1364,17 +1385,7 @@
     const hopsForSize = topHops.filter(h => h.size === bytes);
 
     // For 2-byte and 3-byte, scan nodes directly — topHops only reliably covers 1-byte path hops
-    const hopsToCheck = bytes === 1
-      ? hopsForSize
-      : (() => {
-          const map = {};
-          for (const n of allNodes) {
-            const p = n.public_key.slice(0, bytes * 2).toUpperCase();
-            if (!map[p]) map[p] = { hex: p, count: 0, size: bytes };
-            map[p].count++;
-          }
-          return Object.values(map).filter(h => h.count > 1);
-        })();
+    const hopsToCheck = bytes === 1 ? hopsForSize : buildCollisionHops(allNodes, bytes);
 
     if (!hopsToCheck.length && bytes === 1) {
       el.innerHTML = `<div class="text-muted" style="padding:8px">No 1-byte hops observed in recent packets.</div>`;
@@ -1915,6 +1926,9 @@ function destroy() { _analyticsData = {}; _channelData = null; }
     window._analyticsSaveChannelSort = saveChannelSort;
     window._analyticsChannelTbodyHtml = channelTbodyHtml;
     window._analyticsChannelTheadHtml = channelTheadHtml;
+    window._analyticsBuildOneBytePrefixMap = buildOneBytePrefixMap;
+    window._analyticsBuildTwoBytePrefixInfo = buildTwoBytePrefixInfo;
+    window._analyticsBuildCollisionHops = buildCollisionHops;
   }
 
   registerPage('analytics', { init, destroy });
