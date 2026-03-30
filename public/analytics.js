@@ -1167,8 +1167,9 @@
     if (bytes === 3) {
       const total = totalNodes.length;
       const threeByteNodes = allNodes.filter(n => n.hash_size === 3).length;
+      const nodesForByte = allNodes.filter(n => n.hash_size === 3 || !n.hash_size);
       const prefixMap = {};
-      for (const n of allNodes) {
+      for (const n of nodesForByte) {
         const p = n.public_key.slice(0, 6).toUpperCase();
         if (!prefixMap[p]) prefixMap[p] = 0;
         prefixMap[p]++;
@@ -1206,7 +1207,8 @@
     const headerSize = 24;
 
     if (bytes === 1) {
-      const prefixNodes = buildOneBytePrefixMap(allNodes);
+      const nodesForByte = allNodes.filter(n => n.hash_size === 1 || !n.hash_size);
+      const prefixNodes = buildOneBytePrefixMap(nodesForByte);
       const oneByteCount = allNodes.filter(n => n.hash_size === 1).length;
       const oneUsed = Object.values(prefixNodes).filter(v => v.length > 0).length;
       const oneCollisions = Object.values(prefixNodes).filter(v => v.length > 1).length;
@@ -1292,10 +1294,11 @@
 
     } else if (bytes === 2) {
       // 2-byte mode: 16×16 grid of first-byte groups
-      const firstByteInfo = buildTwoBytePrefixInfo(allNodes);
+      const nodesForByte = allNodes.filter(n => n.hash_size === 2 || !n.hash_size);
+      const firstByteInfo = buildTwoBytePrefixInfo(nodesForByte);
 
       const twoByteCount = allNodes.filter(n => n.hash_size === 2).length;
-      const uniqueTwoBytePrefixes = new Set(allNodes.map(n => n.public_key.slice(0, 4).toUpperCase())).size;
+      const uniqueTwoBytePrefixes = new Set(nodesForByte.map(n => n.public_key.slice(0, 4).toUpperCase())).size;
       const twoCollisions = Object.values(firstByteInfo).filter(v => v.collisionCount > 0).length;
       const twoPct = ((uniqueTwoBytePrefixes / 65536) * 100).toFixed(3);
 
