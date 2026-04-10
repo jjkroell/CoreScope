@@ -2349,21 +2349,21 @@
       try {
         await loadObservers();
         const data = await api(`/packets/${param}`);
-        if (!data?.packet) { app.innerHTML = `<div style="max-width:800px;margin:0 auto;padding:40px;text-align:center"><h2>Packet not found</h2><p>Packet ${param} doesn't exist.</p><a href="#/packets">← Back to packets</a></div>`; return; }
+        if (!data?.packet) { app.innerHTML = `<div style="max-width:800px;margin:0 auto;padding:40px;text-align:center"><h2>Packet not found</h2><p>Packet ${param} doesn't exist.</p><a href="#/packets" class="btn-icon" style="display:inline-flex;align-items:center;gap:6px;text-decoration:none"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg> Back to packets</a></div>`; return; }
         const hops = [];
         try { hops.push(...getParsedPath(data.packet)); } catch {}
         const newHops = hops.filter(h => !(h in hopNameCache));
         if (newHops.length) await resolveHops(newHops);
         const container = document.createElement('div');
         container.style.cssText = 'max-width:800px;margin:0 auto;padding:20px';
-        container.innerHTML = `<div style="margin-bottom:16px"><a href="#/packets" style="color:var(--accent);text-decoration:none">← Back to packets</a></div>`;
+        container.innerHTML = `<div style="margin-bottom:16px"><a href="#/packets" class="btn-icon" style="display:inline-flex;align-items:center;gap:6px;text-decoration:none"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg> Back to packets</a></div>`;
         const detail = document.createElement('div');
         container.appendChild(detail);
         await renderDetail(detail, data);
         app.innerHTML = '';
         app.appendChild(container);
       } catch (e) {
-        app.innerHTML = `<div style="max-width:800px;margin:0 auto;padding:40px;text-align:center"><h2>Error</h2><p>${e.message}</p><a href="#/packets">← Back to packets</a></div>`;
+        app.innerHTML = `<div style="max-width:800px;margin:0 auto;padding:40px;text-align:center"><h2>Error</h2><p>${e.message}</p><a href="#/packets" class="btn-icon" style="display:inline-flex;align-items:center;gap:6px;text-decoration:none"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg> Back to packets</a></div>`;
       }
     },
     destroy: () => {}

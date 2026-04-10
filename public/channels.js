@@ -16,8 +16,21 @@
   const INACTIVE_MS = 8 * 60 * 60 * 1000; // 8 hours
   const unreadChannels = new Set(); // hashes with new unread messages
   const BLOCKED_KEY = 'meshcore-blocked-channels';
+  const USER_CHANNELS_KEY = 'meshcore-user-channels';
   const PERMANENT_BLOCK_NAMES = new Set(['#wardriving', 'unknown']); // hardcoded, cannot be unblocked
   let showingBlockedList = false;
+
+  function getUserAddedChannels() {
+    try { return JSON.parse(localStorage.getItem(USER_CHANNELS_KEY) || '[]'); } catch (_) { return []; }
+  }
+  function saveUserAddedChannel(name) {
+    const list = getUserAddedChannels();
+    if (!list.includes(name)) { list.push(name); localStorage.setItem(USER_CHANNELS_KEY, JSON.stringify(list)); }
+  }
+  function removeUserAddedChannel(name) {
+    const list = getUserAddedChannels().filter(n => n !== name);
+    localStorage.setItem(USER_CHANNELS_KEY, JSON.stringify(list));
+  }
 
   function getBlockedChannels() {
     try { return new Set(JSON.parse(localStorage.getItem(BLOCKED_KEY) || '[]')); }
@@ -28,6 +41,9 @@
   }
   function blockChannel(hash) {
     const s = getBlockedChannels(); s.add(hash); saveBlockedChannels(s);
+    // Also remove from user-added list if it was locally added
+    const ch = channels.find(c => c.hash === hash);
+    if (ch && ch.userAdded) removeUserAddedChannel(ch.name);
     // If this was the selected channel, deselect it
     if (selectedHash === hash) {
       selectedHash = null; messages = [];
@@ -419,7 +435,7 @@
       </div>
       <div class="ch-main" role="region" aria-label="Channel messages">
         <div class="ch-main-header" id="chHeader">
-          <button class="ch-back-btn" id="chBackBtn" aria-label="Back to channels" data-action="ch-back">←</button>
+          <button class="ch-back-btn" id="chBackBtn" aria-label="Back to channels" data-action="ch-back"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg></button>
           <span class="ch-header-text"><span class="ch-header-name">Select a channel</span></span>
         </div>
         <div class="ch-messages" id="chMessages">
@@ -441,35 +457,17 @@
         addForm.classList.toggle('hidden');
         if (!addForm.classList.contains('hidden')) addInput.focus();
       });
-      const doAdd = async () => {
+      const doAdd = () => {
         const raw = addInput.value.trim();
         if (!raw) return;
         const name = raw.startsWith('#') ? raw : '#' + raw;
-        addMsg.textContent = '';
-        addSubmit.disabled = true;
-        try {
-          const res = await fetch('/api/channels/add', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name })
-          });
-          if (res.ok) {
-            addMsg.style.color = '';
-            addMsg.classList.remove('ch-add-msg-error');
-            addMsg.innerHTML = name + ' added &mdash; will appear after first message is received';
-            addInput.value = '';
-            setTimeout(() => { addForm.classList.add('hidden'); addMsg.textContent = ''; }, 4000);
-            await loadChannels(true);
-          } else {
-            const txt = await res.text();
-            addMsg.classList.add('ch-add-msg-error');
-            addMsg.textContent = txt || 'Error';
-          }
-        } catch (e) {
-          addMsg.classList.add('ch-add-msg-error');
-          addMsg.textContent = 'Network error';
-        }
-        addSubmit.disabled = false;
+        saveUserAddedChannel(name);
+        addMsg.style.color = '';
+        addMsg.classList.remove('ch-add-msg-error');
+        addMsg.innerHTML = name + ' added &mdash; will appear after first message is received';
+        addInput.value = '';
+        setTimeout(() => { addForm.classList.add('hidden'); addMsg.textContent = ''; }, 4000);
+        loadChannels(true);
       };
       addSubmit.addEventListener('click', doAdd);
       addInput.addEventListener('keydown', e => { if (e.key === 'Enter') doAdd(); });
@@ -809,6 +807,12 @@
         if (ch.name && ch.name.trim().toLowerCase() === 'unknown') blockChannel(ch.hash);
         return ch;
       }).sort((a, b) => { const an = a.name || a.hash, bn = b.name || b.hash; if (an === 'public') return -1; if (bn === 'public') return 1; return an.localeCompare(bn, undefined, { numeric: true, sensitivity: 'base' }); });
+      // Merge locally-added channels not already returned by the server
+      getUserAddedChannels().forEach(name => {
+        if (!channels.some(ch => ch.name === name)) {
+          channels.push({ hash: name, name, lastActivityMs: 0, userAdded: true });
+        }
+      });
       updateBlockedBadge();
       renderChannelList();
       reconcileSelectionAfterChannelRefresh();

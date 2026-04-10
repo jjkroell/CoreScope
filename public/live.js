@@ -838,6 +838,18 @@
             <span id="favDesc" class="sr-only">Show only favorited and claimed nodes</span>
             <label id="liveGeoFilterLabel" style="display:none"><input type="checkbox" id="liveGeoFilterToggle"> Mesh live area</label>
           </div>
+          <div class="live-toggles-mobile">
+            <button class="live-options-btn" id="liveOptionsBtn" aria-label="Map options" aria-haspopup="true" aria-expanded="false">☰ Options</button>
+            <div class="live-options-menu" id="liveOptionsMenu" aria-label="Map options menu">
+              <label><input type="checkbox" id="liveHeatToggleMobile" checked> Heat</label>
+              <label><input type="checkbox" id="liveGhostToggleMobile" checked> Ghosts</label>
+              <label><input type="checkbox" id="liveRealisticToggleMobile"> Realistic</label>
+              <label><input type="checkbox" id="liveMatrixToggleMobile"> Matrix</label>
+              <label><input type="checkbox" id="liveMatrixRainToggleMobile"> Rain</label>
+              <label><input type="checkbox" id="liveAudioToggleMobile"> 🎵 Audio</label>
+              <label><input type="checkbox" id="liveFavoritesToggleMobile"> ⭐ Favorites</label>
+            </div>
+          </div>
           <div class="audio-controls hidden" id="audioControls">
             <label class="audio-slider-label">Voice <select id="audioVoiceSelect" class="audio-voice-select"></select></label>
             <label class="audio-slider-label">BPM <input type="range" id="audioBpmSlider" min="40" max="300" value="120" class="audio-slider"><span id="audioBpmVal">120</span></label>
@@ -1120,6 +1132,68 @@
       volVal.textContent = v;
       if (window.MeshAudio) MeshAudio.setVolume(v / 100);
     });
+
+    // Mobile options hamburger menu — sync with desktop toggles
+    (function () {
+      const btn = document.getElementById('liveOptionsBtn');
+      const menu = document.getElementById('liveOptionsMenu');
+      if (!btn || !menu) return;
+
+      // Map: mobileId -> desktopId
+      const pairs = [
+        ['liveHeatToggleMobile',       'liveHeatToggle'],
+        ['liveGhostToggleMobile',      'liveGhostToggle'],
+        ['liveRealisticToggleMobile',  'liveRealisticToggle'],
+        ['liveMatrixToggleMobile',     'liveMatrixToggle'],
+        ['liveMatrixRainToggleMobile', 'liveMatrixRainToggle'],
+        ['liveAudioToggleMobile',      'liveAudioToggle'],
+        ['liveFavoritesToggleMobile',  'liveFavoritesToggle'],
+      ];
+
+      // Sync initial state from desktop toggles
+      pairs.forEach(([mId, dId]) => {
+        const m = document.getElementById(mId);
+        const d = document.getElementById(dId);
+        if (m && d) m.checked = d.checked;
+      });
+
+      // When mobile toggle changes, fire the desktop toggle's change event
+      pairs.forEach(([mId, dId]) => {
+        const m = document.getElementById(mId);
+        const d = document.getElementById(dId);
+        if (!m || !d) return;
+        m.addEventListener('change', () => {
+          d.checked = m.checked;
+          d.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+      });
+
+      // Keep mobile in sync if desktop toggles change (e.g. matrix disables heat)
+      pairs.forEach(([mId, dId]) => {
+        const m = document.getElementById(mId);
+        const d = document.getElementById(dId);
+        if (!m || !d) return;
+        const obs = new MutationObserver(() => { m.checked = d.checked; m.disabled = d.disabled; });
+        obs.observe(d, { attributes: true, attributeFilter: ['checked', 'disabled'] });
+        // Also listen to programmatic property changes via change events
+        d.addEventListener('change', () => { m.checked = d.checked; });
+      });
+
+      // Toggle menu open/close
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const open = menu.classList.toggle('open');
+        btn.setAttribute('aria-expanded', open);
+      });
+
+      // Close on outside click
+      document.addEventListener('click', (e) => {
+        if (!menu.contains(e.target) && e.target !== btn) {
+          menu.classList.remove('open');
+          btn.setAttribute('aria-expanded', 'false');
+        }
+      });
+    })();
 
     // Feed show/hide
     const feedEl = document.getElementById('liveFeed');

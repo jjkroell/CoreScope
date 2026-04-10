@@ -302,7 +302,7 @@ function toggleFavorite(pubkey) {
 }
 function favStar(pubkey, cls, name) {
   const on = isFavorite(pubkey);
-  return '<button class="fav-star ' + (cls || '') + (on ? ' on' : '') + '" data-fav="' + pubkey + '" data-name="' + escapeHtml(name || '') + '" title="' + (on ? 'Remove from My Nodes' : 'Add to My Nodes') + '">' + (on ? '★' : '☆') + '</button>';
+  return '<button class="fav-star ' + (cls || '') + (on ? ' on' : '') + '" data-fav="' + pubkey + '" data-name="' + escapeHtml(name || '') + '" title="' + (on ? 'Remove from Favorites' : 'Add to Favorites') + '">' + (on ? '★' : '☆') + '</button>';
 }
 function bindFavStars(container, onToggle) {
   container.querySelectorAll('.fav-star').forEach(btn => {

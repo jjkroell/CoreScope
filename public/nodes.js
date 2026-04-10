@@ -5,15 +5,6 @@
   let nodes = [];
   const PAYLOAD_TYPES = {0:'Request',1:'Response',2:'Direct Msg',3:'ACK',4:'Advert',5:'Channel Msg',7:'Anon Req',8:'Path',9:'Trace'};
 
-  function syncClaimedToFavorites() {
-    const myNodes = JSON.parse(localStorage.getItem('meshcore-my-nodes') || '[]');
-    const favs = getFavorites();
-    let changed = false;
-    myNodes.forEach(mn => {
-      if (!favs.includes(mn.pubkey)) { favs.push(mn.pubkey); changed = true; }
-    });
-    if (changed) localStorage.setItem('meshcore-favorites', JSON.stringify(favs));
-  }
 
   let counts = {};
   let selectedKey = null;
@@ -322,7 +313,7 @@
       // Full-screen single node view
       app.innerHTML = `<div class="node-fullscreen">
         <div class="node-full-header">
-          <button class="detail-back-btn node-back-btn" id="nodeBackBtn" aria-label="Back to nodes">←</button>
+          <button class="detail-back-btn node-back-btn" id="nodeBackBtn" aria-label="Back to nodes"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg></button>
           <span class="node-full-title">Loading…</span>
         </div>
         <div class="node-full-body" id="nodeFullBody">
@@ -856,8 +847,6 @@
         });
       }
 
-      // Auto-sync claimed → favorites
-      syncClaimedToFavorites();
 
       renderCounts();
       if (refreshOnly) {
@@ -1299,7 +1288,7 @@
     _fallbackSortState = s;
     if (_nodesTableSortCtrl) _nodesTableSortCtrl.sort(s.column, s.direction);
   };
-  window._nodesSyncClaimedToFavorites = syncClaimedToFavorites;
+
   window._nodesRenderNodeTimestampHtml = renderNodeTimestampHtml;
   window._nodesRenderNodeTimestampText = renderNodeTimestampText;
   window._nodesGetStatusInfo = getStatusInfo;

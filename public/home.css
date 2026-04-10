@@ -626,5 +626,23 @@
   .home-search-wrap { max-width: 100%; padding: 0 4px; }
 
   /* Hero padding already handled at 640px; ensure text fits */
-  .home-hero p { font-size: 0.85rem; }
+  .home-hero p { font-size: 1rem; }
+}
+
+/* ── Home: mobile readable ────────────────────────────────── */
+@media (max-width: 640px) {
+  .home-section-title { font-size: 13px !important; }
+  .fav-card { padding: 16px !important; }
+  .fav-card-header strong { font-size: 1rem !important; }
+  .fav-card-stats { font-size: 0.85rem !important; gap: 10px !important; }
+  .suggest-name { font-size: 1rem !important; }
+  .suggest-key { font-size: 0.8rem !important; }
+  .suggest-item { padding: 14px 16px !important; min-height: 52px !important; }
+  .home-section-header { padding: 20px 16px 0 !important; }
+  .my-nodes-grid { padding: 0 16px 16px !important; gap: 16px !important; }
+  .mnc-name { font-size: 1rem !important; }
+  .mnc-role { font-size: 0.8rem !important; }
+  .mnc-metric-val { font-size: 1.1rem !important; }
+  .mnc-metric-label { font-size: 0.75rem !important; }
+  .journey-step { font-size: 14px !important; padding: 14px !important; }
 }
