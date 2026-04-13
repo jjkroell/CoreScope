@@ -1,10 +1,10 @@
 # CoreScope
 
-[![Go Server Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Kpa-clawbot/CoreScope/master/.badges/go-server-coverage.json)](https://github.com/Kpa-clawbot/CoreScope/actions/workflows/deploy.yml)
-[![Go Ingestor Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Kpa-clawbot/CoreScope/master/.badges/go-ingestor-coverage.json)](https://github.com/Kpa-clawbot/CoreScope/actions/workflows/deploy.yml)
-[![E2E Tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Kpa-clawbot/CoreScope/master/.badges/e2e-tests.json)](https://github.com/Kpa-clawbot/CoreScope/actions/workflows/deploy.yml)
-[![Frontend Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Kpa-clawbot/CoreScope/master/.badges/frontend-coverage.json)](https://github.com/Kpa-clawbot/CoreScope/actions/workflows/deploy.yml)
-[![Deploy](https://github.com/Kpa-clawbot/CoreScope/actions/workflows/deploy.yml/badge.svg)](https://github.com/Kpa-clawbot/CoreScope/actions/workflows/deploy.yml)
+[![Go Server Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/jjkroell/CoreScope/master/.badges/go-server-coverage.json)](https://github.com/jjkroell/CoreScope/actions/workflows/deploy.yml)
+[![Go Ingestor Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/jjkroell/CoreScope/master/.badges/go-ingestor-coverage.json)](https://github.com/jjkroell/CoreScope/actions/workflows/deploy.yml)
+[![E2E Tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/jjkroell/CoreScope/master/.badges/e2e-tests.json)](https://github.com/jjkroell/CoreScope/actions/workflows/deploy.yml)
+[![Frontend Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/jjkroell/CoreScope/master/.badges/frontend-coverage.json)](https://github.com/jjkroell/CoreScope/actions/workflows/deploy.yml)
+[![Deploy](https://github.com/jjkroell/CoreScope/actions/workflows/deploy.yml/badge.svg)](https://github.com/jjkroell/CoreScope/actions/workflows/deploy.yml)
 
 > High-performance mesh network analyzer powered by Go. Sub-millisecond packet queries, ~300 MB memory for 56K+ packets, real-time WebSocket broadcast, full channel decryption.
 
@@ -93,7 +93,7 @@ See [docs/deployment.md](docs/deployment.md) for the full deployment guide — M
 ### Build from Source
 
 ```bash
-git clone https://github.com/Kpa-clawbot/CoreScope.git
+git clone https://github.com/jjkroell/CoreScope.git
 cd CoreScope
 ./manage.sh setup
 ```
