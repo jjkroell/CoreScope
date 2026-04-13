@@ -1641,6 +1641,17 @@
       bulkHealth.forEach(h => { healthMap[h.public_key] = h; });
       const enriched = nodes.filter(n => healthMap[n.public_key]).map(n => ({ ...n, health: { stats: healthMap[n.public_key].stats, observers: healthMap[n.public_key].observers } }));
 
+      // Fetch health for any claimed nodes not in the bulk-health top-50
+      if (myKeys.size) {
+        const missingKeys = [...myKeys].filter(pk => !healthMap[pk]);
+        await Promise.all(missingKeys.map(async pk => {
+          try {
+            const h = await api('/nodes/' + encodeURIComponent(pk) + '/health', { ttl: CLIENT_TTL.nodeHealth });
+            if (h && h.stats) healthMap[pk] = h;
+          } catch {}
+        }));
+      }
+
       // Compute rankings
       const byPackets = [...enriched].sort((a, b) => (b.health.stats.totalTransmissions || b.health.stats.totalPackets || 0) - (a.health.stats.totalTransmissions || a.health.stats.totalPackets || 0));
       const bySnr = [...enriched].filter(n => n.health.stats.avgSnr != null).sort((a, b) => b.health.stats.avgSnr - a.health.stats.avgSnr);
@@ -1707,17 +1718,19 @@
           <table class="analytics-table" style="margin-bottom:24px">
             <thead><tr><th scope="col">Node</th><th scope="col">Role</th><th scope="col">Packets</th><th scope="col">Avg SNR</th><th scope="col">Observers</th><th scope="col">Last Heard</th></tr></thead>
             <tbody>
-              ${enriched.filter(n => myKeys.has(n.public_key)).map(n => {
-                const s = n.health.stats;
+              ${nodes.filter(n => myKeys.has(n.public_key)).map(n => {
+                const h = healthMap[n.public_key];
+                const s = h ? (h.stats || {}) : {};
+                const observers = h ? (h.observers || []) : [];
                 return `<tr>
                   <td>${nodeLink(n)}</td>
-                  <td><span class="badge" style="background:${(ROLE_COLORS[n.role]||'#6b7280')}20;color:${ROLE_COLORS[n.role]||'#6b7280'}">${n.role}</span></td>
+                  <td><span class="badge" style="background:${(ROLE_COLORS[n.role]||'#6b7280')}20;color:${ROLE_COLORS[n.role]||'#6b7280'}">${n.role || '—'}</span></td>
                   <td>${s.totalTransmissions || s.totalPackets || 0}</td>
                   <td>${s.avgSnr != null ? s.avgSnr.toFixed(1) + ' dB' : '—'}</td>
-                  <td>${n.health.observers?.length || 0}</td>
+                  <td>${observers.length || 0}</td>
                   <td>${s.lastHeard ? timeAgo(s.lastHeard) : '—'}</td>
                 </tr>`;
-              }).join('') || '<tr><td colspan="6" class="text-muted">No claimed nodes have health data</td></tr>'}
+              }).join('') || '<tr><td colspan="6" class="text-muted">Claimed nodes not found in current region</td></tr>'}
             </tbody>
           </table>` : ''}
 
@@ -2349,11 +2362,16 @@ function destroy() { _analyticsData = {}; _channelData = null; if (_ngState && _
       return;
     }
 
-    // Deduplicate by public_key, require at least 6 hex chars to build all 3 tiers
+    // Deduplicate by public_key then by name — same name = same physical node
+    // re-keyed or duplicated in DB, not a real collision.
     const nodeMap = new Map();
+    const nodeNameSet = new Set();
     (nodesResp.nodes || nodesResp).forEach(n => {
       if (n.public_key && n.public_key.length >= 6 && !nodeMap.has(n.public_key)) {
+        const nameKey = (n.name || '').trim().toUpperCase();
+        if (nameKey && nodeNameSet.has(nameKey)) return;
         nodeMap.set(n.public_key, n);
+        if (nameKey) nodeNameSet.add(nameKey);
       }
     });
     const allNodes = [...nodeMap.values()];
@@ -2383,7 +2401,18 @@ function destroy() { _analyticsData = {}; _channelData = null; if (_ngState && _
     [1, 2, 3].forEach(b => {
       stats[b] = {
         usedPrefixes: idx[b].size,
-        collidingPrefixes: [...idx[b].values()].filter(arr => arr.length > 1).length,
+        collidingPrefixes: [...idx[b].values()].filter(arr => {
+          // Deduplicate by name within the bucket — same name = same physical
+          // node re-keyed or duplicated in DB, not a real collision.
+          const seenNames = new Set();
+          const unique = arr.filter(n => {
+            const nameKey = (n.name || '').trim().toUpperCase();
+            if (nameKey && seenNames.has(nameKey)) return false;
+            if (nameKey) seenNames.add(nameKey);
+            return true;
+          });
+          return unique.length > 1;
+        }).length,
       };
     });
 

@@ -12,6 +12,12 @@
     if (!o) return id;
     return o.iata ? `${o.name} (${o.iata})` : o.name;
   }
+  function obsNameOnly(id) {
+    if (!id) return '—';
+    const o = observerMap.get(id);
+    if (!o) return id;
+    return o.name || id;
+  }
   let selectedId = null;
   let groupByHash = true;
   let filters = {};
@@ -36,7 +42,7 @@
   let _tableSortInstance = null;
   let _packetSortColumn = null;
   let _packetSortDirection = 'desc';
-  let showHexHashes = localStorage.getItem('meshcore-hex-hashes') === 'true';
+  const showHexHashes = true;
   var _pendingUrlRegion = null;
 
   var DEFAULT_TIME_WINDOW = 15;
@@ -131,15 +137,13 @@
   }
 
   function closeDetailPanel() {
-    var panel = document.getElementById('pktRight');
-    if (panel) {
-      panel.classList.add('empty');
-      panel.innerHTML = '<div class="panel-resize-handle" id="pktResizeHandle"></div>' + PANEL_CLOSE_HTML + '<span>Select a packet to view details</span>';
-      var layout = panel.closest('.split-layout');
-      if (layout) layout.classList.add('detail-collapsed');
-      selectedId = null;
-      renderTableRows();
+    const overlay = document.getElementById('pktDetailOverlay');
+    if (overlay) {
+      overlay.style.display = 'none';
     }
+    selectedId = null;
+    history.replaceState(null, '', '#/packets');
+    renderTableRows();
   }
 
   function initPanelResize() {
@@ -343,18 +347,27 @@
     var _urlRegion = _initUrlParams.get('region');
     if (_urlRegion) _pendingUrlRegion = _urlRegion;
 
-    app.innerHTML = `<div class="split-layout detail-collapsed">
+    app.innerHTML = `<div class="pkt-full-layout">
       <div class="panel-left" id="pktLeft" aria-live="polite" aria-relevant="additions removals"></div>
-      <div class="panel-right empty" id="pktRight" aria-live="polite">
-        <div class="panel-resize-handle" id="pktResizeHandle"></div>
-        ${PANEL_CLOSE_HTML}
-        <span>Select a packet to view details</span>
+    </div>
+    <div class="modal-overlay pkt-detail-overlay" id="pktDetailOverlay" style="display:none">
+      <div class="modal pkt-detail-modal" role="dialog" aria-label="Packet Detail" aria-modal="true">
+        <div class="pkt-detail-modal-header">
+          <span class="pkt-detail-modal-title" id="pktDetailTitle">Packet Detail</span>
+          <button class="btn-icon pkt-detail-close" id="pktDetailClose" title="Close">✕</button>
+        </div>
+        <div class="pkt-detail-modal-body" id="pktDetailBody"></div>
       </div>
     </div>`;
-    initPanelResize();
-    document.getElementById('pktRight').addEventListener('click', function(e) {
-      if (e.target.closest('.panel-close-btn')) closeDetailPanel();
+    // Detail modal open/close
+    document.getElementById('pktDetailClose').addEventListener('click', closeDetailPanel);
+    document.getElementById('pktDetailOverlay').addEventListener('click', function(e) {
+      if (e.target === this) closeDetailPanel();
     });
+    document.addEventListener('keydown', function _detailEsc(e) {
+      if (e.key === 'Escape' && document.getElementById('pktDetailOverlay').style.display !== 'none') closeDetailPanel();
+    });
+
     await loadObservers();
     loadPackets();
 
@@ -420,22 +433,8 @@
           if (hashInput) hashInput.value = filters.hash;
           await loadPackets();
         }
-        // Show detail in sidebar
-        const panel = document.getElementById('pktRight');
-        if (panel) {
-          panel.classList.remove('empty');
-          panel.innerHTML = '<div class="panel-resize-handle" id="pktResizeHandle"></div>' + PANEL_CLOSE_HTML;
-          const content = document.createElement('div');
-          panel.appendChild(content);
-          const pkt = data.packet;
-          try {
-            const hops = getParsedPath(pkt);
-            const newHops = hops.filter(h => !(h in hopNameCache));
-            if (newHops.length) await resolveHops(newHops);
-          } catch {}
-          await renderDetail(content, data);
-          initPanelResize();
-        }
+        // Show detail in modal
+        await selectPacket(pktId, data.packet?.hash, data);
       } catch {}
     }
     wsHandler = debouncedOnWS(function (msgs) {
@@ -705,83 +704,135 @@
     filtersBuilt = true;
 
     el.innerHTML = `
-      <div class="page-header">
-        <h2>Latest Packets <span class="count">(${totalCount})</span></h2>
-        <div>
-          <button class="btn-icon" data-action="pkt-refresh" title="Refresh">🔄</button>
-          <button class="btn-icon" id="pktPauseBtn" data-action="pkt-pause" title="Pause live updates">⏸</button>
-          <button class="btn-icon" data-action="pkt-byop" title="Bring Your Own Packet" aria-label="Bring Your Own Packet - paste raw packet hex for analysis" aria-haspopup="dialog">📦 BYOP</button>
+      <div class="pkt-sticky-top" id="pktStickyTop">
+        <div class="page-header pkt-page-header">
+          <h2>Latest Packets <span class="count">(${totalCount})</span></h2>
+          <button class="pkt-byop-pill" data-action="pkt-byop" title="Paste raw packet hex for analysis" aria-label="Bring Your Own Packet - paste raw packet hex for analysis" aria-haspopup="dialog">📦 Decode Packet</button>
+        </div>
+        <div class="pkt-search-bar">
+          <div style="flex:1;min-width:0">
+            <input type="text" id="packetFilterInput" class="packet-filter-input"
+              placeholder='Filter: type == Advert && snr > 5 · payload.name contains "Gilroy"'
+              aria-label="Packet filter expression"
+              style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-family:var(--mono);font-size:13px;background:var(--input-bg);color:var(--text)">
+            <div id="packetFilterError" style="color:var(--status-red);font-size:11px;margin-top:2px;display:none"></div>
+            <div id="packetFilterCount" style="color:var(--text-muted);font-size:11px;margin-top:2px;display:none"></div>
+          </div>
+          <button class="pkt-byop-pill pkt-filters-btn" id="pktFiltersBtn" aria-haspopup="dialog">
+            ⚙ Filters<span class="pkt-filter-badge" id="pktFilterBadge" style="display:none">0</span>
+          </button>
         </div>
       </div>
-      <div class="filter-group" style="flex:1;margin-bottom:8px">
-        <input type="text" id="packetFilterInput" class="packet-filter-input"
-          placeholder='Filter: type == Advert && snr > 5 · payload.name contains "Gilroy"'
-          aria-label="Packet filter expression"
-          style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-family:var(--mono);font-size:13px;background:var(--input-bg);color:var(--text)">
-        <div id="packetFilterError" style="color:var(--status-red);font-size:11px;margin-top:2px;display:none"></div>
-        <div id="packetFilterCount" style="color:var(--text-muted);font-size:11px;margin-top:2px;display:none"></div>
-      </div>
-      <div class="filter-bar" id="pktFilters">
-        <button class="btn filter-toggle-btn" id="filterToggleBtn">Filters ▾</button>
-        <div class="filter-group">
-          <input type="text" placeholder="Packet hash…" id="fHash" aria-label="Filter by packet hash" title="Filter packets by hex hash prefix">
-          <div class="node-filter-wrap" style="position:relative">
-            <input type="text" placeholder="Node name…" id="fNode" autocomplete="off" role="combobox" aria-expanded="false" aria-owns="fNodeDropdown" aria-activedescendant="" aria-autocomplete="list" title="Filter packets involving this node (sender or path)">
-            <div class="node-filter-dropdown hidden" id="fNodeDropdown" role="listbox"></div>
+      <div class="modal-overlay pkt-filters-overlay" id="pktFiltersOverlay" style="display:none" aria-hidden="true">
+        <div class="modal pkt-filters-modal" role="dialog" aria-label="Packet Filters" aria-modal="true">
+          <div class="pkt-fm-header">
+            <span class="pkt-fm-title">Filters</span>
+            <button class="btn-icon pkt-fm-close" id="pktFMClose" title="Close filters">✕</button>
           </div>
-          <div class="multi-select-wrap" id="observerFilterWrap">
-            <button class="multi-select-trigger" id="observerTrigger" title="Show only packets seen by selected observer stations">All Observers ▾</button>
-            <div class="multi-select-menu" id="observerMenu"></div>
+          <div class="pkt-fm-body">
+            <div class="pkt-fm-row">
+              <div class="pkt-fm-field">
+                <label class="pkt-fm-label">Time Window</label>
+                <select id="fTimeWindow" class="filter-select pkt-fm-select" aria-label="Time window filter">
+                  <option value="15">Last 15 min</option>
+                  <option value="30">Last 30 min</option>
+                  <option value="60">Last 1 hour</option>
+                  <option value="180">Last 3 hours</option>
+                  <option value="360"${isMobile ? ' disabled title="Disabled on mobile to prevent browser crashes"' : ''}>Last 6 hours</option>
+                  <option value="720"${isMobile ? ' disabled title="Disabled on mobile to prevent browser crashes"' : ''}>Last 12 hours</option>
+                  <option value="1440"${isMobile ? ' disabled title="Disabled on mobile to prevent browser crashes"' : ''}>Last 24 hours</option>
+                  ${isMobile ? '' : '<option value="0">All time</option>'}
+                </select>
+              </div>
+              <div class="pkt-fm-field">
+                <label class="pkt-fm-label" for="fHash">Packet Hash</label>
+                <input type="text" placeholder="Hash prefix…" id="fHash" aria-label="Filter by packet hash">
+              </div>
+              <div class="pkt-fm-field">
+                <label class="pkt-fm-label" for="fNode">Node Name</label>
+                <div class="node-filter-wrap" style="position:relative">
+                  <input type="text" placeholder="Node name…" id="fNode" autocomplete="off" role="combobox" aria-expanded="false" aria-owns="fNodeDropdown" aria-activedescendant="" aria-autocomplete="list">
+                  <div class="node-filter-dropdown hidden" id="fNodeDropdown" role="listbox"></div>
+                </div>
+              </div>
+            </div>
+            <div class="pkt-fm-row">
+              <div class="pkt-fm-field">
+                <label class="pkt-fm-label">Observer</label>
+                <div class="multi-select-wrap" id="observerFilterWrap">
+                  <button class="multi-select-trigger" id="observerTrigger" title="Show only packets seen by selected observer stations">All Observers ▾</button>
+                  <div class="multi-select-menu" id="observerMenu"></div>
+                </div>
+              </div>
+              <div class="pkt-fm-field">
+                <label class="pkt-fm-label">Type</label>
+                <div class="multi-select-wrap" id="typeFilterWrap">
+                  <button class="multi-select-trigger" id="typeTrigger" title="Filter by packet type">All Types ▾</button>
+                  <div class="multi-select-menu" id="typeMenu"></div>
+                </div>
+              </div>
+              <div class="pkt-fm-field">
+                <label class="pkt-fm-label">Region</label>
+                <div id="packetsRegionFilter" class="region-filter-container"></div>
+              </div>
+            </div>
+            <div class="pkt-fm-row pkt-fm-toggles">
+              <button class="btn ${groupByHash ? 'active' : ''}" id="fGroup" title="Collapse duplicate observations of the same packet into expandable groups">Group by Hash</button>
+              <button class="btn" id="fMyNodes" title="Show only packets from your favorited/claimed nodes">★ My Nodes</button>
+            </div>
+            <div class="pkt-fm-divider"></div>
+            <div class="pkt-fm-row">
+              <div class="pkt-fm-field" style="flex:2">
+                <label class="pkt-fm-label" for="fObsSort">Observation Sort</label>
+                <select id="fObsSort" class="pkt-fm-select" aria-label="Observation sort order">
+                  <option value="observer">Observer — groups by station</option>
+                  <option value="path-asc">Path ↑ — shortest hops first</option>
+                  <option value="path-desc">Path ↓ — longest hops first</option>
+                  <option value="chrono-asc">Time ↑ — earliest first</option>
+                  <option value="chrono-desc">Time ↓ — latest first</option>
+                </select>
+              </div>
+            </div>
+            <div class="pkt-fm-divider"></div>
+            <div class="pkt-fm-field">
+              <label class="pkt-fm-label">Columns</label>
+              <div class="col-toggle-menu pkt-fm-col-inline" id="colToggleMenu"></div>
+            </div>
+            <div class="pkt-fm-reset-row">
+              <button class="pkt-fm-reset-btn" id="pktFMReset">Reset to defaults</button>
+            </div>
           </div>
-          <div id="packetsRegionFilter" class="region-filter-container" style="display:inline-block;vertical-align:middle"></div>
-          <div class="multi-select-wrap" id="typeFilterWrap">
-            <button class="multi-select-trigger" id="typeTrigger" title="Filter by packet type">All Types ▾</button>
-            <div class="multi-select-menu" id="typeMenu"></div>
-          </div>
-        </div>
-        <div class="filter-group">
-          <button class="btn ${groupByHash ? 'active' : ''}" id="fGroup" title="Collapse duplicate observations of the same packet into expandable groups">Group by Hash</button>
-          <button class="btn" id="fMyNodes" title="Show only packets from your favorited/claimed nodes">★ My Nodes</button>
-        </div>
-        <div class="filter-group">
-          <select id="fTimeWindow" class="filter-select" aria-label="Time window filter">
-            <option value="15">Last 15 min</option>
-            <option value="30">Last 30 min</option>
-            <option value="60">Last 1 hour</option>
-            <option value="180">Last 3 hours</option>
-            <option value="360"${isMobile ? ' disabled title="Disabled on mobile to prevent browser crashes"' : ''}>Last 6 hours</option>
-            <option value="720"${isMobile ? ' disabled title="Disabled on mobile to prevent browser crashes"' : ''}>Last 12 hours</option>
-            <option value="1440"${isMobile ? ' disabled title="Disabled on mobile to prevent browser crashes"' : ''}>Last 24 hours</option>
-            ${isMobile ? '' : '<option value="0">All time</option>'}
-          </select>
-        </div>
-        <div class="filter-group">
-          <select id="fObsSort" aria-label="Observation sort order" title="Controls how observations are ordered within packet groups and which observation appears in the header row. Observer: Groups by observer station, earliest first. Path: Orders by hop count. Time: Orders by observation timestamp.">
-            <option value="observer">Sort: Observer</option>
-            <option value="path-asc">Sort: Path ↑ (shortest)</option>
-            <option value="path-desc">Sort: Path ↓ (longest)</option>
-            <option value="chrono-asc">Sort: Time ↑ (earliest)</option>
-            <option value="chrono-desc">Sort: Time ↓ (latest)</option>
-          </select>
-          <span class="sort-help" id="sortHelpIcon">ⓘ</span>
-        </div>
-        <div class="filter-group">
-          <div class="col-toggle-wrap">
-            <button class="col-toggle-btn" id="colToggleBtn" title="Show/hide table columns">Columns ▾</button>
-            <div class="col-toggle-menu" id="colToggleMenu"></div>
-          </div>
-          <button class="btn btn-icon${showHexHashes ? ' active' : ''}" id="hexHashToggle" title="Show raw hex hash prefixes instead of resolved node names in the path column">Hex Paths</button>
         </div>
       </div>
       <table class="data-table" id="pktTable">
+        <colgroup>
+          <col style="width:24px">
+          <col class="col-region" style="width:48px">
+          <col class="col-time" style="width:52px">
+          <col class="col-hash" style="width:102px">
+          <col class="col-size" style="width:48px">
+          <col class="col-type" style="width:108px">
+          <col class="col-observer" style="width:190px">
+          <col class="col-rpt" style="width:64px">
+          <col class="col-path">
+          <col class="col-details" style="width:260px">
+        </colgroup>
         <thead><tr>
-          <th scope="col"></th><th scope="col" class="col-region" data-sort-key="region">Region</th><th scope="col" class="col-time" data-sort-key="time" data-type="date">Time</th><th scope="col" class="col-hash" data-sort-key="hash">Hash</th><th scope="col" class="col-size" data-sort-key="size" data-type="numeric">Size</th>
-          <th scope="col" class="col-hashsize" data-sort-key="hb" data-type="numeric">HB</th>
-          <th scope="col" class="col-type" data-sort-key="type">Type</th><th scope="col" class="col-observer" data-sort-key="observer">Observer</th><th scope="col" class="col-path" data-sort-key="path">Path</th><th scope="col" class="col-rpt" data-sort-key="rpt" data-type="numeric">Rpt</th><th scope="col" class="col-details">Details</th>
+          <th scope="col"></th><th scope="col" class="col-region" data-sort-key="region" title="Region">Rgn</th><th scope="col" class="col-time" data-sort-key="time" data-type="date">Time</th><th scope="col" class="col-hash" data-sort-key="hash">Hash</th><th scope="col" class="col-size" data-sort-key="size" data-type="numeric">Size</th>
+          <th scope="col" class="col-type" data-sort-key="type">Type</th><th scope="col" class="col-observer" data-sort-key="observer">First Observer</th><th scope="col" class="col-rpt" data-sort-key="rpt" data-type="numeric">Repeats</th><th scope="col" class="col-path" data-sort-key="path">Path</th><th scope="col" class="col-details">Details</th>
         </tr></thead>
         <tbody id="pktBody"></tbody>
       </table>
     `;
+
+    // Set thead top offset to match sticky header height
+    requestAnimationFrame(() => {
+      const stickyTop = document.getElementById('pktStickyTop');
+      if (stickyTop) {
+        const h = stickyTop.offsetHeight;
+        document.getElementById('pktLeft')?.style.setProperty('--pkt-sticky-h', h + 'px');
+      }
+    });
 
     // Init shared RegionFilter component
     RegionFilter.init(document.getElementById('packetsRegionFilter'), { dropdown: true });
@@ -789,7 +840,7 @@
       RegionFilter.setSelected(_pendingUrlRegion.split(',').filter(Boolean));
       _pendingUrlRegion = null;
     }
-    RegionFilter.onChange(function() { updatePacketsUrl(); loadPackets(); });
+    RegionFilter.onChange(function() { updatePacketsUrl(); updateFilterBadge(); loadPackets(); });
 
     // --- Packet Filter Language ---
     (function() {
@@ -868,6 +919,7 @@
       if (filters.observer) localStorage.setItem('meshcore-observer-filter', filters.observer); else localStorage.removeItem('meshcore-observer-filter');
       buildObserverMenu();
       updateObsTrigger();
+      updateFilterBadge();
       renderTableRows();
     });
 
@@ -910,6 +962,7 @@
       if (filters.type) localStorage.setItem('meshcore-type-filter', filters.type); else localStorage.removeItem('meshcore-type-filter');
       buildTypeMenu();
       updateTypeTrigger();
+      updateFilterBadge();
       renderTableRows();
     });
 
@@ -921,16 +974,94 @@
       if (typeWrap && !typeWrap.contains(e.target)) { const m = typeWrap.querySelector('.multi-select-menu'); if (m) m.classList.remove('open'); }
     });
 
-    // Filter toggle button for mobile
-    document.getElementById('filterToggleBtn').addEventListener('click', function() {
-      const bar = document.getElementById('pktFilters');
-      bar.classList.toggle('filters-expanded');
-      this.textContent = bar.classList.contains('filters-expanded') ? 'Filters ▴' : 'Filters ▾';
-    });
+    // Filters modal open/close
+    const _pktFiltersBtn = document.getElementById('pktFiltersBtn');
+    const _pktFiltersOverlay = document.getElementById('pktFiltersOverlay');
+    const _pktFMClose = document.getElementById('pktFMClose');
+    function _openFiltersModal() {
+      _pktFiltersOverlay.style.display = 'flex';
+      _pktFiltersOverlay.removeAttribute('aria-hidden');
+      _pktFMClose.focus();
+    }
+    function _closeFiltersModal() {
+      _pktFiltersOverlay.style.display = 'none';
+      _pktFiltersOverlay.setAttribute('aria-hidden', 'true');
+      _pktFiltersBtn.focus();
+    }
+    _pktFiltersBtn.addEventListener('click', _openFiltersModal);
+    _pktFMClose.addEventListener('click', _closeFiltersModal);
+    _pktFiltersOverlay.addEventListener('click', (e) => { if (e.target === _pktFiltersOverlay) _closeFiltersModal(); });
+    document.addEventListener('keydown', function _fmEsc(e) { if (e.key === 'Escape' && _pktFiltersOverlay.style.display !== 'none') _closeFiltersModal(); });
+
+    function updateFilterBadge() {
+      let n = 0;
+      if (filters.hash) n++;
+      if (filters.node) n++;
+      if (filters.observer) n++;
+      if (filters.type) n++;
+      if (RegionFilter.getRegionParam()) n++;
+      if (filters.myNodes) n++;
+      const badge = document.getElementById('pktFilterBadge');
+      if (badge) { badge.textContent = n; badge.style.display = n > 0 ? 'inline-flex' : 'none'; }
+    }
+    updateFilterBadge();
+
+    function resetFilters() {
+      // Time window: 24h
+      savedTimeWindowMin = 1440;
+      localStorage.setItem('meshcore-time-window', '1440');
+      const fTW = document.getElementById('fTimeWindow');
+      if (fTW) fTW.value = '1440';
+      // Hash
+      filters.hash = undefined;
+      const fH = document.getElementById('fHash');
+      if (fH) fH.value = '';
+      // Node
+      filters.node = undefined; filters.nodeName = undefined;
+      const fN = document.getElementById('fNode');
+      if (fN) fN.value = '';
+      const fNDrop = document.getElementById('fNodeDropdown');
+      if (fNDrop) fNDrop.classList.add('hidden');
+      // Observers: all
+      selectedObservers.clear();
+      filters.observer = undefined;
+      localStorage.removeItem('meshcore-observer-filter');
+      buildObserverMenu(); updateObsTrigger();
+      // Types: all
+      selectedTypes.clear();
+      filters.type = undefined;
+      localStorage.removeItem('meshcore-type-filter');
+      buildTypeMenu(); updateTypeTrigger();
+      // Region: all
+      RegionFilter.setSelected([]);
+      // Group by hash: on
+      groupByHash = true;
+      const fGroup = document.getElementById('fGroup');
+      if (fGroup) fGroup.classList.add('active');
+      // My nodes: off
+      filters.myNodes = false;
+      const fMyNodes = document.getElementById('fMyNodes');
+      if (fMyNodes) fMyNodes.classList.remove('active');
+      // Obs sort: observer
+      obsSortMode = SORT_OBSERVER;
+      localStorage.setItem('meshcore-obs-sort', SORT_OBSERVER);
+      const fObsSort = document.getElementById('fObsSort');
+      if (fObsSort) fObsSort.value = SORT_OBSERVER;
+      // Reset columns to platform default
+      visibleCols = COL_DEFS.map(c => c.key).filter(k => !defaultHidden.includes(k));
+      applyColVisibility();
+      colMenu.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+        cb.checked = visibleCols.includes(cb.dataset.col);
+      });
+      updateFilterBadge();
+      updatePacketsUrl();
+      loadPackets();
+    }
+    document.getElementById('pktFMReset').addEventListener('click', resetFilters);
 
     // Filter event listeners
     document.getElementById('fHash').value = filters.hash || '';
-    document.getElementById('fHash').addEventListener('input', debounce((e) => { filters.hash = e.target.value || undefined; loadPackets(); }, 300));
+    document.getElementById('fHash').addEventListener('input', debounce((e) => { filters.hash = e.target.value || undefined; updateFilterBadge(); loadPackets(); }, 300));
 
     // Time window dropdown — restore from localStorage and bind change
     const fTimeWindow = document.getElementById('fTimeWindow');
@@ -947,6 +1078,7 @@
     document.getElementById('fMyNodes').addEventListener('click', function () {
       filters.myNodes = !filters.myNodes;
       this.classList.toggle('active', filters.myNodes);
+      updateFilterBadge();
       loadPackets();
     });
 
@@ -1008,17 +1140,25 @@
       { key: 'hash', label: 'Hash' },
       { key: 'size', label: 'Size' },
       { key: 'type', label: 'Type' },
-      { key: 'observer', label: 'Observer' },
+      { key: 'observer', label: 'First Observer' },
+      { key: 'rpt', label: 'Repeats' },
       { key: 'path', label: 'Path' },
-      { key: 'rpt', label: 'Rpt' },
       { key: 'details', label: 'Details' },
     ];
     const isNarrow = window.innerWidth <= 640;
-    const defaultHidden = isNarrow ? ['region', 'hash', 'observer', 'path', 'rpt', 'size'] : ['region'];
+    const defaultHidden = isNarrow ? ['time', 'hash', 'size', 'observer', 'rpt', 'path'] : [];
+    const COLS_VERSION = isNarrow ? 'mob2' : 'desk1';
     let visibleCols;
     try {
-      visibleCols = JSON.parse(localStorage.getItem('packets-visible-cols'));
+      if (localStorage.getItem('packets-cols-version') === COLS_VERSION) {
+        visibleCols = JSON.parse(localStorage.getItem('packets-visible-cols'));
+      }
     } catch {}
+    if (visibleCols) {
+      const validKeys = new Set(COL_DEFS.map(c => c.key));
+      visibleCols = visibleCols.filter(k => validKeys.has(k));
+      if (!visibleCols.length) visibleCols = null;
+    }
     if (!visibleCols) visibleCols = COL_DEFS.map(c => c.key).filter(k => !defaultHidden.includes(k));
     const colMenu = document.getElementById('colToggleMenu');
     const pktTable = document.getElementById('pktTable');
@@ -1027,6 +1167,7 @@
         pktTable.classList.toggle('hide-col-' + c.key, !visibleCols.includes(c.key));
       });
       localStorage.setItem('packets-visible-cols', JSON.stringify(visibleCols));
+      localStorage.setItem('packets-cols-version', COLS_VERSION);
     }
     colMenu.innerHTML = COL_DEFS.map(c =>
       `<label><input type="checkbox" data-col="${c.key}" ${visibleCols.includes(c.key) ? 'checked' : ''}> ${c.label}</label>`
@@ -1039,19 +1180,9 @@
       else { visibleCols = visibleCols.filter(k => k !== col); }
       applyColVisibility();
     });
-    document.getElementById('colToggleBtn').addEventListener('click', (e) => {
-      e.stopPropagation();
-      colMenu.classList.toggle('open');
-    });
+    // colToggleBtn removed from modal — columns are now inline checkboxes
     bindDocumentHandler('colmenu', 'click', () => colMenu.classList.remove('open'));
     applyColVisibility();
-
-    document.getElementById('hexHashToggle').addEventListener('click', function () {
-      showHexHashes = !showHexHashes;
-      localStorage.setItem('meshcore-hex-hashes', showHexHashes);
-      this.classList.toggle('active', showHexHashes);
-      renderTableRows();
-    });
 
     // Node name filter with autocomplete
     const fNode = document.getElementById('fNode');
@@ -1065,7 +1196,7 @@
       if (!q) {
         fNodeDrop.classList.add('hidden');
         fNode.setAttribute('aria-expanded', 'false');
-        if (filters.node) { filters.node = undefined; filters.nodeName = undefined; loadPackets(); }
+        if (filters.node) { filters.node = undefined; filters.nodeName = undefined; updateFilterBadge(); loadPackets(); }
         return;
       }
       try {
@@ -1094,6 +1225,7 @@
       fNode.setAttribute('aria-expanded', 'false');
       fNode.setAttribute('aria-activedescendant', '');
       nodeActiveIdx = -1;
+      updateFilterBadge();
       loadPackets();
     }
 
@@ -1143,6 +1275,11 @@
         if (e.type === 'keydown') e.preventDefault();
         const action = row.dataset.action;
         const value = row.dataset.value;
+        // Clicking the expand chevron cell only toggles group — never opens detail
+        if (e.target.closest('.pkt-expand-cell')) {
+          if (action === 'toggle-select') pktToggleGroup(value);
+          return;
+        }
         if (action === 'select') {
           const hash = row.dataset.hash;
           if (hash) selectPacket(null, hash);
@@ -1160,7 +1297,7 @@
           }
         }
         else if (action === 'select-hash') pktSelectHash(value);
-        else if (action === 'toggle-select') { pktToggleGroup(value); pktSelectHash(value); }
+        else if (action === 'toggle-select') { pktSelectHash(value); }
       };
       pktBody.addEventListener('click', handler);
       pktBody.addEventListener('keydown', handler);
@@ -1174,7 +1311,6 @@
     });
 
     renderTableRows();
-    makeColumnsResizable('#pktTable', 'meshcore-pkt-col-widths');
 
     // Initialize table sorting (virtual scroll — sort data array, not DOM)
     if (window.TableSort) {
@@ -1229,16 +1365,15 @@
     const _grpDecoded = getParsedDecoded(p) || {};
     const _grpChanStyle = window.ChannelColors ? window.ChannelColors.getRowStyle(_grpDecoded.type || groupTypeName, _grpDecoded.channel) : '';
     let html = `<tr class="${isSingle ? '' : 'group-header'} ${isExpanded ? 'expanded' : ''}" data-hash="${p.hash}" data-action="${isSingle ? 'select-hash' : 'toggle-select'}" data-value="${p.hash}" data-entry-idx="${entryIdx}" tabindex="0" role="row"${_grpChanStyle ? ' style="' + _grpChanStyle + '"' : ''}>
-          <td style="width:28px;text-align:center;cursor:pointer">${isSingle ? '' : (isExpanded ? '▼' : '▶')}</td>
-          <td class="col-region">${groupRegion ? `<span class="badge-region">${groupRegion}</span>` : '—'}</td>
+          <td class="pkt-expand-cell">${isSingle ? '' : `<span class="pkt-chevron${isExpanded ? ' expanded' : ''}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>`}</td>
+          <td class="col-region">${groupRegion || '—'}</td>
           <td class="col-time">${renderTimestampCell(p.latest)}</td>
-          <td class="mono col-hash">${truncate(p.hash || '—', 8)}</td>
+          <td class="mono col-hash">${midTruncate(p.hash || '—', 4)}</td>
           <td class="col-size">${groupSize ? groupSize + 'B' : '—'}</td>
-          <td class="col-hashsize mono">${groupHashBytes}</td>
           <td class="col-type">${p.payload_type != null ? `<span class="badge badge-${groupTypeClass}">${groupTypeName}</span>${transportBadge(p.route_type)}` : '—'}</td>
-          <td class="col-observer">${isSingle ? truncate(obsName(headerObserverId), 16) : truncate(obsName(headerObserverId), 10) + (p.observer_count > 1 ? ' +' + (p.observer_count - 1) : '')}</td>
+          <td class="col-observer">${truncate(obsNameOnly(headerObserverId), 25)}</td>
+          <td class="col-rpt">${p.observation_count > 1 ? '<span class="badge badge-obs" title="Seen ' + p.observation_count + ' times">×' + p.observation_count + '</span>' : (isSingle ? '' : p.count)}</td>
           <td class="col-path"><span class="path-hops">${groupPathStr}</span></td>
-          <td class="col-rpt">${p.observation_count > 1 ? '<span class="badge badge-obs" title="Seen ' + p.observation_count + ' times">👁 ' + p.observation_count + '</span>' : (isSingle ? '' : p.count)}</td>
           <td class="col-details">${getDetailPreview(getParsedDecoded(p))}</td>
         </tr>`;
     if (isExpanded && p._children) {
@@ -1255,15 +1390,14 @@
         const childPath = getParsedPath(c);
         const childPathStr = renderPath(childPath, c.observer_id);
         html += `<tr class="group-child" data-id="${c.id}" data-hash="${c.hash || ''}" data-action="select-observation" data-value="${c.id}" data-parent-hash="${p.hash}" data-entry-idx="${entryIdx}" tabindex="0" role="row">
-              <td></td><td class="col-region">${childRegion ? `<span class="badge-region">${childRegion}</span>` : '—'}</td>
+              <td></td><td class="col-region">${childRegion || '—'}</td>
               <td class="col-time">${renderTimestampCell(c.timestamp)}</td>
-              <td class="mono col-hash">${truncate(c.hash || '', 8)}</td>
+              <td class="mono col-hash">${midTruncate(c.hash || '', 4)}</td>
               <td class="col-size">${size}B</td>
-              <td class="col-hashsize mono">${childHashBytes}</td>
               <td class="col-type"><span class="badge badge-${typeClass}">${typeName}</span>${transportBadge(c.route_type)}</td>
-              <td class="col-observer">${truncate(obsName(c.observer_id), 16)}</td>
-              <td class="col-path"><span class="path-hops">${childPathStr}</span></td>
+              <td class="col-observer">${truncate(obsNameOnly(c.observer_id), 25)}</td>
               <td class="col-rpt"></td>
+              <td class="col-path"><span class="path-hops">${childPathStr}</span></td>
               <td class="col-details">${getDetailPreview(getParsedDecoded(c))}</td>
             </tr>`;
       }
@@ -1285,15 +1419,14 @@
     const pathStr = renderPath(pathHops, p.observer_id);
     const detail = getDetailPreview(decoded);
     return `<tr data-id="${p.id}" data-hash="${p.hash || ''}" data-action="select-hash" data-value="${p.hash || p.id}" data-entry-idx="${entryIdx}" tabindex="0" role="row" class="${selectedId === p.id ? 'selected' : ''}"${_chanStyle ? ' style="' + _chanStyle + '"' : ''}>
-        <td></td><td class="col-region">${region ? `<span class="badge-region">${region}</span>` : '—'}</td>
+        <td></td><td class="col-region">${region || '—'}</td>
         <td class="col-time">${renderTimestampCell(p.timestamp)}</td>
-        <td class="mono col-hash">${truncate(p.hash || String(p.id), 8)}</td>
+        <td class="mono col-hash">${midTruncate(p.hash || String(p.id), 4)}</td>
         <td class="col-size">${size}B</td>
-        <td class="col-hashsize mono">${hashBytes}</td>
         <td class="col-type"><span class="badge badge-${typeClass}">${typeName}</span>${transportBadge(p.route_type)}</td>
-        <td class="col-observer">${truncate(obsName(p.observer_id), 16)}</td>
-        <td class="col-path"><span class="path-hops">${pathStr}</span></td>
+        <td class="col-observer">${truncate(obsNameOnly(p.observer_id), 25)}</td>
         <td class="col-rpt"></td>
+        <td class="col-path"><span class="path-hops">${pathStr}</span></td>
         <td class="col-details">${detail}</td>
       </tr>`;
   }
@@ -1663,52 +1796,30 @@
       history.replaceState(null, '', `#/packets/${id}${obsParam}`);
     }
     renderTableRows();
-    const isMobileNow = window.innerWidth <= 640;
-    let panel;
-    if (isMobileNow) {
-      // Use mobile bottom sheet
-      let sheet = document.getElementById('mobileDetailSheet');
-      if (!sheet) {
-        sheet = document.createElement('div');
-        sheet.id = 'mobileDetailSheet';
-        sheet.className = 'mobile-detail-sheet';
-        sheet.innerHTML = '<div class="mobile-sheet-handle"></div><button class="mobile-sheet-close" id="mobileSheetClose">✕</button><div class="mobile-sheet-content"></div>';
-        document.body.appendChild(sheet);
-        sheet.querySelector('#mobileSheetClose').addEventListener('click', () => {
-          sheet.classList.remove('open');
-        });
-        sheet.querySelector('.mobile-sheet-handle').addEventListener('click', () => {
-          sheet.classList.remove('open');
-        });
-      }
-      panel = sheet.querySelector('.mobile-sheet-content');
-      panel.innerHTML = '<div class="text-center text-muted" style="padding:40px">Loading…</div>';
-      sheet.classList.add('open');
-    } else {
-      panel = document.getElementById('pktRight');
-      panel.classList.remove('empty');
-      var layout = panel.closest('.split-layout');
-      if (layout) layout.classList.remove('detail-collapsed');
-      panel.innerHTML = '<div class="panel-resize-handle" id="pktResizeHandle"></div>' + PANEL_CLOSE_HTML + '<div class="text-center text-muted" style="padding:40px">Loading…</div>';
-      initPanelResize();
-    }
+
+    const overlay = document.getElementById('pktDetailOverlay');
+    const body = document.getElementById('pktDetailBody');
+    const title = document.getElementById('pktDetailTitle');
+    if (!overlay || !body) return;
+
+    body.innerHTML = '<div class="text-center text-muted" style="padding:40px">Loading…</div>';
+    if (title) title.textContent = hash ? `Packet ${hash.slice(0, 8)}…` : `Packet #${id}`;
+    overlay.style.display = 'flex';
+    document.getElementById('pktDetailClose').focus();
 
     try {
       const data = prefetchedData || await api(hash ? `/packets/${hash}` : `/packets/${id}`);
-      // Resolve path hops for detail view
       const pkt = data.packet;
       try {
         const hops = getParsedPath(pkt);
         const newHops = hops.filter(h => !(h in hopNameCache));
         if (newHops.length) await resolveHops(newHops);
       } catch {}
-      panel.innerHTML = isMobileNow ? '' : '<div class="panel-resize-handle" id="pktResizeHandle"></div>' + PANEL_CLOSE_HTML;
-      const content = document.createElement('div');
-      panel.appendChild(content);
-      await renderDetail(content, data);
-      if (!isMobileNow) initPanelResize();
+      body.innerHTML = '';
+      const detailTitle = await renderDetail(body, data);
+      if (title) title.textContent = detailTitle;
     } catch (e) {
-      panel.innerHTML = `<div class="text-muted">Error: ${e.message}</div>`;
+      body.innerHTML = `<div class="text-muted" style="padding:24px">Error: ${e.message}</div>`;
     }
   }
 
@@ -1850,10 +1961,10 @@
     }
 
     panel.innerHTML = `
-      <div class="detail-title">${hasRawHex ? `Packet Byte Breakdown (${size} bytes)` : typeName + ' Packet'}</div>
-      <div class="detail-hash">${pkt.hash || 'Packet #' + pkt.id}</div>
+
       ${messageHtml}
       <dl class="detail-meta">
+        ${pkt.hash ? `<dt style="padding-top:10px">Hash ID</dt><dd class="detail-hash-id" style="padding-top:10px">${pkt.hash}</dd>` : ''}
         <dt>Observer</dt><dd>${obsName(pkt.observer_id)}</dd>
         <dt>Location</dt><dd>${locationHtml}</dd>
         <dt>SNR / RSSI</dt><dd>${snr != null ? snr + ' dB' : '—'} / ${rssi != null ? rssi + ' dBm' : '—'}</dd>
@@ -1962,6 +2073,7 @@
         }
       });
     }
+    return hasRawHex ? `Packet Byte Breakdown (${size} bytes)` : typeName + ' Packet';
   }
 
   function buildDecodedTable(decoded) {
@@ -2286,8 +2398,6 @@
       if (newHops.length) await resolveHops(newHops);
       expandedHashes.add(hash);
       renderTableRows();
-      // Also open detail panel — no extra fetch needed
-      selectPacket(pkt.id, hash, data);
     } catch {}
   }
   async function pktSelectHash(hash) {

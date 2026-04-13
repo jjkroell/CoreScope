@@ -2149,8 +2149,8 @@ func queryInt(r *http.Request, key string, def int) int {
 	// Enforce per-key maximums to prevent runaway queries
 	switch key {
 	case "limit":
-		if n > 1000 {
-			n = 1000
+		if n > 5000 {
+			n = 5000
 		}
 	case "offset":
 		if n > 500000 {

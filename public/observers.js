@@ -144,7 +144,7 @@
         return `<tr style="cursor:pointer" tabindex="0" role="row" data-action="navigate" data-value="#/observers/${encodeURIComponent(o.id)}" onclick="location.hash='#/observers/${encodeURIComponent(o.id)}'">
           <td><span class="health-dot ${h.cls}" title="${h.label}"></span> ${h.label}</td>
           <td class="mono">${o.name || o.id}</td>
-          <td>${o.iata ? `<span class="badge-region">${o.iata}</span>` : '—'}</td>
+          <td>${o.iata || '—'}</td>
           <td>${timeAgo(o.last_seen)}</td>
           <td>${(o.packet_count || 0).toLocaleString()}</td>
           <td>${sparkBar(o.packetsLastHour || 0, maxPkts)}</td>

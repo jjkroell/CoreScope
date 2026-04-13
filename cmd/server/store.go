@@ -5148,9 +5148,32 @@ func (s *PacketStore) computeHashCollisions(region string) map[string]interface{
 			}
 		}
 
+		// Deduplicate nodesForByte by public key (primary) and name (secondary).
+		// Same pubkey = same node. Same non-empty name = same physical node that
+		// was re-keyed or has duplicate DB entries. Both checks prevent false
+		// collisions in the prefix map AND the two_byte_cells matrix.
+		seenPK := make(map[string]bool)
+		seenName := make(map[string]bool)
+		var dedupedNodes []collisionNode
+		for _, cn := range nodesForByte {
+			pkKey := strings.ToUpper(cn.PublicKey)
+			nameKey := strings.ToUpper(strings.TrimSpace(cn.Name))
+			if seenPK[pkKey] {
+				continue
+			}
+			if nameKey != "" && seenName[nameKey] {
+				continue
+			}
+			seenPK[pkKey] = true
+			if nameKey != "" {
+				seenName[nameKey] = true
+			}
+			dedupedNodes = append(dedupedNodes, cn)
+		}
+
 		// Build prefix map
 		prefixMap := make(map[string][]collisionNode)
-		for _, cn := range nodesForByte {
+		for _, cn := range dedupedNodes {
 			if len(cn.PublicKey) < bytes*2 {
 				continue
 			}
@@ -5262,7 +5285,7 @@ func (s *PacketStore) computeHashCollisions(region string) map[string]interface{
 				}
 				twoByteCells[hex] = cell
 			}
-			for _, cn := range nodesForByte {
+			for _, cn := range dedupedNodes {
 				if len(cn.PublicKey) < 4 {
 					continue
 				}

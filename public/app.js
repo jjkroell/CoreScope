@@ -246,6 +246,11 @@ function truncate(str, len) {
   if (!str) return '';
   return str.length > len ? str.slice(0, len) + '…' : str;
 }
+function midTruncate(str, n) {
+  if (!str) return '';
+  if (str.length <= n * 2) return str;
+  return str.slice(0, n) + '…' + str.slice(-n);
+}
 
 function formatPubKey(pubkey, hashSize, truncLen) {
   if (!pubkey) return '';

@@ -21,6 +21,7 @@
 
   let map, ws, nodesLayer, pathsLayer, animLayer, heatLayer, geoFilterLayer;
   let nodeMarkers = {};
+  let obsOffsetMarkers = {}; // key → { obsMarker, linkLine, obsGlow } for dual-role nodes
   let nodeData = {};
   let packetCount = 0;
   let activeAnims = 0;
@@ -1505,7 +1506,7 @@
     }, 2000);
   }
 
-  async function showNodeDetail(pubkey) {
+  async function showNodeDetail(pubkey, asObserver) {
     activeNodeDetailKey = pubkey;
     const panel = document.getElementById('liveNodeDetail');
     const content = document.getElementById('nodeDetailContent');
@@ -1515,16 +1516,17 @@
     content.innerHTML = '<div style="padding:20px;color:var(--text-muted)">Loading…</div>';
     try {
       const [data, healthData] = await Promise.all([
-        api('/nodes/' + encodeURIComponent(pubkey), { ttl: 30 }),
-        api('/nodes/' + encodeURIComponent(pubkey) + '/health', { ttl: 30 }).catch(() => null)
+        api('/nodes/' + encodeURIComponent(pubkey), { ttl: 60000 }),
+        api('/nodes/' + encodeURIComponent(pubkey) + '/health', { ttl: 60000 }).catch(() => null)
       ]);
       const n = data.node;
       const h = healthData || {};
       const stats = h.stats || {};
       const observers = h.observers || [];
       const recent = h.recentPackets || [];
-      const roleColor = ROLE_COLORS[n.role] || '#6b7280';
-      const roleLabel = (ROLE_LABELS[n.role] || n.role || 'unknown').replace(/s$/, '');
+      const displayRole = asObserver ? 'observer' : n.role;
+      const roleColor = ROLE_COLORS[displayRole] || '#6b7280';
+      const roleLabel = (ROLE_LABELS[displayRole] || displayRole || 'unknown').replace(/s$/, '');
       const hasLoc = n.lat != null && n.lon != null;
       const lastSeen = formatLiveTimestampHtml(n.last_seen);
       const thresholds = window.getHealthThresholds ? getHealthThresholds(n.role) : { degradedMs: 3600000, silentMs: 86400000 };
@@ -1645,34 +1647,114 @@
     } catch (e) { console.error('Failed to load nodes:', e); }
   }
 
+  // Convert a pixel offset [dx, dy] from a latLng into a new latLng at the current zoom.
+  // This keeps the visual gap constant on screen regardless of map position.
+  function _getOffsetLatLng(latLng, dx, dy) {
+    if (!map) return latLng;
+    const pt = map.latLngToContainerPoint(latLng);
+    return map.containerPointToLatLng(L.point(pt.x + dx, pt.y + dy));
+  }
+
   async function loadObservers() {
     try {
       const resp = await fetch('/api/observers');
       const data = await resp.json();
       const list = Array.isArray(data) ? data : (data.observers || []);
-      const color = ROLE_COLORS.observer || '#8b5cf6';
+      const obsColor = ROLE_COLORS.observer || '#8b5cf6';
       list.forEach(obs => {
         if (!obs.lat || !obs.lon) return;
-        const key = obs.public_key || obs.id || obs.observer_id;
+        const key = (obs.public_key || obs.id || obs.observer_id || '').toLowerCase();
         if (!key) return;
+
         if (nodeMarkers[key]) {
-          nodeMarkers[key].setStyle({ fillColor: color });
-          nodeMarkers[key]._baseColor = color;
-          if (nodeMarkers[key]._glowMarker) nodeMarkers[key]._glowMarker.setStyle({ fillColor: color });
+          // Node already on map as another role (e.g. repeater) — create an offset observer dot
+          if (obsOffsetMarkers[key]) return; // already set up
+
+          const existingMarker = nodeMarkers[key];
+          const origLatLng = existingMarker.getLatLng();
+          const offsetLatLng = _getOffsetLatLng(origLatLng, 22, -22);
+
+          const linkLine = L.polyline([origLatLng, offsetLatLng], {
+            color: obsColor, weight: 1.5, opacity: 0.45, dashArray: '5 4', interactive: false
+          }).addTo(nodesLayer);
+
+          const obsGlow = L.circleMarker(offsetLatLng, {
+            radius: 11, fillColor: obsColor, fillOpacity: 0.1, stroke: false, interactive: false
+          }).addTo(nodesLayer);
+
+          const obsMarker = L.circleMarker(offsetLatLng, {
+            radius: 7, color: '#fff', weight: 1.5, fillColor: obsColor, fillOpacity: 0.9
+          });
+          obsMarker._baseColor = obsColor;
+          obsMarker._nodeKey = key;
+          obsMarker._origKey = key;
+
+          // Hover: brighten link and glow when either dot is hovered
+          const onOver = () => {
+            linkLine.setStyle({ opacity: 0.9, weight: 2.5 });
+            obsGlow.setStyle({ fillOpacity: 0.25 });
+          };
+          const onOut = () => {
+            linkLine.setStyle({ opacity: 0.45, weight: 1.5 });
+            obsGlow.setStyle({ fillOpacity: 0.1 });
+          };
+          obsMarker.on('mouseover', onOver).on('mouseout', onOut);
+          existingMarker.on('mouseover', onOver).on('mouseout', onOut);
+
+          obsMarker.bindTooltip(
+            escapeHtml(obs.name || key.slice(0, 12)) + ' (Observer)',
+            { permanent: false, direction: 'top', offset: [0, -10], className: 'live-tooltip' }
+          );
+          obsMarker.on('click', (e) => { L.DomEvent.stopPropagation(e); showNodeDetail(key, true); });
+
+          // Don't add to map yet — _updateObsOffsetVisibility() handles zoom-gated display
+          obsOffsetMarkers[key] = { obsMarker, linkLine, obsGlow };
+          existingMarker._obsOffset = obsOffsetMarkers[key];
           return;
         }
+
+        // Pure observer — place normally
         const latLng = L.latLng(obs.lat, obs.lon);
         const circle = L.circleMarker(latLng, {
-          radius: 7, color: '#fff', weight: 1.5,
-          fillColor: color, fillOpacity: 0.9
+          radius: 7, color: '#fff', weight: 1.5, fillColor: obsColor, fillOpacity: 0.9
         });
-        circle._baseColor = color;
+        circle._baseColor = obsColor;
         circle._nodeKey = key;
-        circle.bindTooltip(escapeHtml(obs.name || key.slice(0, 12)), { permanent: false });
+        circle.bindTooltip(escapeHtml(obs.name || key.slice(0, 12)), {
+          permanent: false, direction: 'top', offset: [0, -10], className: 'live-tooltip'
+        });
+        circle.on('click', (e) => { L.DomEvent.stopPropagation(e); showNodeDetail(key); });
         circle.addTo(nodesLayer);
         nodeMarkers[key] = circle;
       });
+      _updateObsOffsetVisibility();
     } catch (e) { console.warn('Failed to load observers:', e); }
+  }
+
+  const OBS_OFFSET_MIN_ZOOM = 12;
+
+  function _updateObsOffsetVisibility() {
+    if (!map) return;
+    const zoom = map.getZoom();
+    const show = zoom >= OBS_OFFSET_MIN_ZOOM;
+    for (const [key, obs] of Object.entries(obsOffsetMarkers)) {
+      const origMarker = nodeMarkers[key];
+      if (show && origMarker) {
+        // Recompute pixel-stable offset at current zoom
+        const origLatLng = origMarker.getLatLng();
+        const newOffset = _getOffsetLatLng(origLatLng, 22, -22);
+        obs.obsMarker.setLatLng(newOffset);
+        obs.obsGlow.setLatLng(newOffset);
+        obs.linkLine.setLatLngs([origLatLng, newOffset]);
+        if (!nodesLayer.hasLayer(obs.obsMarker)) obs.obsMarker.addTo(nodesLayer);
+        if (!nodesLayer.hasLayer(obs.obsGlow)) obs.obsGlow.addTo(nodesLayer);
+        if (!nodesLayer.hasLayer(obs.linkLine)) obs.linkLine.addTo(nodesLayer);
+      } else {
+        if (nodesLayer.hasLayer(obs.obsMarker)) nodesLayer.removeLayer(obs.obsMarker);
+        if (nodesLayer.hasLayer(obs.obsGlow)) nodesLayer.removeLayer(obs.obsGlow);
+        if (nodesLayer.hasLayer(obs.linkLine)) nodesLayer.removeLayer(obs.linkLine);
+      }
+    }
   }
 
   let _affinityInterval = null;
@@ -1696,6 +1778,7 @@
     if (nodesLayer) nodesLayer.clearLayers();
     if (animLayer) animLayer.clearLayers();
     nodeMarkers = {};
+    obsOffsetMarkers = {};
     nodeData = {};
     nodeActivity = {};
     if (window.HopResolver) HopResolver.init([]);
@@ -1883,6 +1966,7 @@
       marker._baseSize = size;
       if (marker._glowMarker) marker._glowMarker.setRadius(size + 4);
     }
+    _updateObsOffsetVisibility();
   }
 
   // Prune nodes not seen within their role's health threshold.

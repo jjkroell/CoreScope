@@ -88,6 +88,68 @@
     font-size: 22px;
     font-weight: 700;
   }
+  /* Packets page: keep title + buttons on one row — buttons must stay visible */
+  .pkt-page-header {
+    flex-direction: row !important;
+    align-items: center !important;
+    flex-wrap: nowrap !important;
+    gap: 8px !important;
+    padding: 12px 16px !important;
+  }
+  .pkt-page-header h2 {
+    font-size: 17px !important;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pkt-byop-pill {
+    font-size: 12px !important;
+    padding: 6px 12px !important;
+    min-height: 34px !important;
+    white-space: nowrap;
+  }
+  /* Packet detail modal: bottom sheet on phone */
+  .pkt-detail-overlay { padding-top: 0 !important; align-items: flex-end !important; }
+  .pkt-detail-modal {
+    max-width: 100% !important; width: 100% !important;
+    border-radius: 16px 16px 0 0 !important;
+    max-height: 92vh !important;
+  }
+  .pkt-detail-modal-header { padding: 14px 16px; }
+  .pkt-detail-modal-body { padding: 0 16px 20px; }
+  /* Filters modal: bottom sheet on phone */
+  .pkt-filters-overlay { padding-top: 0 !important; align-items: flex-end !important; }
+  .pkt-filters-modal {
+    max-width: 100% !important;
+    width: 100% !important;
+    border-radius: 16px 16px 0 0 !important;
+    max-height: 88vh !important;
+  }
+  .pkt-fm-body { padding: 16px; gap: 16px; }
+  .pkt-fm-row { flex-direction: column; gap: 12px; }
+  .pkt-fm-row.pkt-fm-toggles { flex-direction: row !important; flex-wrap: wrap; }
+  .pkt-fm-field { min-width: 0; }
+  .pkt-fm-select,
+  .pkt-fm-field input[type="text"],
+  .pkt-fm-field .multi-select-trigger,
+  .pkt-fm-field .col-toggle-btn,
+  .pkt-fm-field .btn-icon,
+  .pkt-fm-body .btn {
+    font-size: 16px !important;
+    height: 44px !important;
+    min-height: 44px !important;
+  }
+  .pkt-fm-divider { margin: 0 -16px; }
+  .pkt-fm-header { padding: 14px 16px; }
+  .pkt-fm-col-inline { grid-template-columns: repeat(2, 1fr) !important; }
+  .pkt-fm-col-inline label { font-size: 15px !important; padding: 6px 8px !important; min-height: 36px; }
+  /* Packets table: on phone hide observer too — enough columns remain (time, hash, type, path, details) */
+  #pktTable .col-observer { display: none; }
+  /* Packet table rows: tighter padding on phone for data density */
+  #pktTable td, #pktTable th { padding: 6px 5px; font-size: 12px; }
+  #pktTable .col-time { font-size: 11px; }
 
   /* ── Buttons & form controls ──────────────────────────────── */
   .btn {
@@ -982,6 +1044,32 @@
     font-size: 13px;
     padding: 9px 8px;
   }
+
+  /* ── Packets page (tablet) ────────────────────────────────── */
+  /* Packet detail modal on tablet */
+  .pkt-detail-overlay { padding-top: 50px; }
+  .pkt-detail-modal { max-width: 680px; max-height: calc(100vh - 70px); }
+  /* Filters modal: wider sheet from bottom on tablet */
+  .pkt-filters-overlay { padding-top: 60px; align-items: flex-start; }
+  .pkt-filters-modal { max-width: 560px; }
+  /* Keep page-header as single row on tablet too */
+  .pkt-page-header {
+    flex-direction: row !important;
+    align-items: center !important;
+    flex-wrap: nowrap !important;
+    gap: 10px !important;
+    padding: 12px 16px !important;
+  }
+  .pkt-page-header h2 {
+    font-size: 18px !important;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* Packets table: tighter cells to fit more columns */
+  #pktTable td, #pktTable th { padding: 7px 6px; }
 
   /* ── Detail panel ─────────────────────────────────────────── */
   .panel-right {

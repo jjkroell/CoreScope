@@ -405,11 +405,14 @@
     if (layout) layout.classList.remove('ch-show-main');
     var sidebar = document.querySelector('.ch-sidebar');
     if (sidebar) sidebar.style.pointerEvents = '';
-    // If we pushed a history entry for mobile nav, pop it to keep history in sync
     if (_mobileNavPushed) {
+      // Button path: pop the duplicate entry; URL cleanup happens in _popstateHandler
       _mobileNavPushed = false;
       _skipNextPopstate = true;
       history.back();
+    } else {
+      // Swipe path: browser already popped, just clean up the URL
+      history.replaceState(null, '', '#/channels');
     }
   }
 
@@ -770,7 +773,17 @@
 
     // Mobile: intercept browser back gesture while in channel message view
     _popstateHandler = function () {
-      if (_skipNextPopstate) { _skipNextPopstate = false; return; }
+      if (_skipNextPopstate) {
+        _skipNextPopstate = false;
+        if (location.hash.startsWith('#/channels')) {
+          history.replaceState(null, '', '#/channels');
+        }
+        return;
+      }
+      // Only intercept back gesture when we pushed a duplicate mobile history entry.
+      // Without this guard, popstate fires on desktop during forward navigation (nav link click)
+      // and incorrectly calls chBack(), replacing the URL with #/channels.
+      if (!_mobileNavPushed) return;
       var layout = app.querySelector('.ch-layout');
       if (layout && layout.classList.contains('ch-show-main')) {
         _mobileNavPushed = false; // browser already popped the entry

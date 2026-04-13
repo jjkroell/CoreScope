@@ -347,9 +347,15 @@
         <div class="nodes-counts" id="nodeCounts"></div>
       </div>
       <div id="nodesRegionFilter" class="region-filter-container"></div>
-      <div class="split-layout">
-        <div class="panel-left" id="nodesLeft" aria-live="polite" aria-relevant="additions removals"></div>
-        <div class="panel-right empty" id="nodesRight"><span>Select a node to view details</span></div>
+      <div id="nodesLeft" aria-live="polite" aria-relevant="additions removals"></div>
+    </div>
+    <div class="modal-overlay nodes-detail-overlay" id="nodesDetailOverlay" style="display:none">
+      <div class="modal nodes-detail-modal" role="dialog" aria-label="Node Detail" aria-modal="true">
+        <div class="nodes-detail-header">
+          <span class="nodes-detail-title" id="nodesDetailTitle"></span>
+          <button class="btn-icon nodes-detail-close" id="nodesDetailClose" title="Close (Esc)">✕</button>
+        </div>
+        <div class="nodes-detail-body" id="nodesDetailBody"></div>
       </div>
     </div>`;
 
@@ -960,28 +966,15 @@
       tbody.addEventListener('keydown', handler);
     }
 
-    // Escape to close node detail panel
+    // Escape to close node detail modal
     document.addEventListener('keydown', function nodesPanelEsc(e) {
-      if (e.key === 'Escape') {
-        const panel = document.getElementById('nodesRight');
-        if (panel && !panel.classList.contains('empty')) {
-          panel.classList.add('empty');
-          panel.innerHTML = '<span>Select a node to view details</span>';
-          selectedKey = null;
-          renderRows();
-        }
-      }
+      if (e.key === 'Escape') closeNodeModal();
     });
 
-    // #630: Close button for node detail panel (important for mobile full-screen overlay)
-    document.getElementById('nodesRight').addEventListener('click', function(e) {
-      if (e.target.closest('.panel-close-btn')) {
-        const panel = document.getElementById('nodesRight');
-        panel.classList.add('empty');
-        panel.innerHTML = '<span>Select a node to view details</span>';
-        selectedKey = null;
-        renderRows();
-      }
+    // Close button and backdrop click
+    document.getElementById('nodesDetailClose').addEventListener('click', closeNodeModal);
+    document.getElementById('nodesDetailOverlay').addEventListener('click', function(e) {
+      if (e.target === this) closeNodeModal();
     });
 
     renderRows();
@@ -1019,7 +1012,7 @@
       const status = getNodeStatus(n.role || 'companion', lastSeenTime ? new Date(lastSeenTime).getTime() : 0);
       const lastSeenClass = status === 'active' ? 'last-seen-active' : 'last-seen-stale';
       return `<tr data-key="${n.public_key}" data-action="select" data-value="${n.public_key}" tabindex="0" role="row" class="${selectedKey === n.public_key ? 'selected' : ''}${isClaimed ? ' claimed-row' : ''}">
-        <td>${favStar(n.public_key, 'node-fav', n.name)}${isClaimed ? '<span class="claimed-badge" title="My Mesh">★</span> ' : ''}<strong>${n.name || '(unnamed)'}</strong>${dupNameBadge(n.name, n.public_key, dupMap)}</td>
+        <td>${isClaimed ? '<span class="claimed-badge" title="My Mesh">★</span> ' : favStar(n.public_key, 'node-fav', n.name)}<strong>${n.name || '(unnamed)'}</strong>${dupNameBadge(n.name, n.public_key, dupMap)}</td>
         <td class="mono col-pubkey">${formatPubKey(n.public_key, n.hash_size, 16)}</td>
         <td><span class="badge" style="background:${roleColor}20;color:${roleColor}">${n.role}</span></td>
         <td class="${lastSeenClass}">${renderNodeTimestampHtml(n.last_heard || n.last_seen)}</td>
@@ -1030,23 +1023,30 @@
     makeColumnsResizable('#nodesTable', 'meshcore-nodes-col-widths');
   }
 
+  function closeNodeModal() {
+    const overlay = document.getElementById('nodesDetailOverlay');
+    if (overlay) overlay.style.display = 'none';
+    if (detailMap) { try { detailMap.remove(); } catch {} detailMap = null; }
+    selectedKey = null;
+    renderRows();
+  }
+
   async function selectNode(pubkey) {
-    // On mobile, navigate to full-screen node view
-    if (window.innerWidth <= 640) {
-      location.hash = '#/nodes/' + encodeURIComponent(pubkey);
-      return;
-    }
     selectedKey = pubkey;
     renderRows();
-    const panel = document.getElementById('nodesRight');
-    panel.classList.remove('empty');
-    panel.innerHTML = '<div class="text-center text-muted" style="padding:40px">Loading…</div>';
+    const overlay = document.getElementById('nodesDetailOverlay');
+    const body = document.getElementById('nodesDetailBody');
+    const title = document.getElementById('nodesDetailTitle');
+    overlay.style.display = 'flex';
+    if (title) title.textContent = '';
+    body.innerHTML = '<div class="text-center text-muted" style="padding:40px">Loading…</div>';
 
     try {
       const data = await fetchNodeDetail(pubkey);
-      renderDetail(panel, data);
+      if (title) title.textContent = data.node?.name || '';
+      renderDetail(body, data);
     } catch (e) {
-      panel.innerHTML = `<div class="text-muted">Error: ${e.message}</div>`;
+      body.innerHTML = `<div class="text-muted" style="padding:24px">Error: ${e.message}</div>`;
     }
   }
 
@@ -1071,7 +1071,6 @@
     const dupBadge = dupNameBadge(n.name, n.public_key, dupMap);
 
     panel.innerHTML = `
-      <button class="panel-close-btn" title="Close detail pane (Esc)">✕</button>
       <div class="node-detail">
         <div class="node-detail-name">${escapeHtml(n.name || '(unnamed)')}${dupBadge}</div>
         <div class="node-detail-role">${renderNodeBadges(n, roleColor)}
