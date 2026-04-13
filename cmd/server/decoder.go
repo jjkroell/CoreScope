@@ -96,7 +96,7 @@ type Payload struct {
 	Lat             *float64     `json:"lat,omitempty"`
 	Lon             *float64     `json:"lon,omitempty"`
 	Name            string       `json:"name,omitempty"`
-	ChannelHash     int          `json:"channelHash,omitempty"`
+	ChannelHash     *int         `json:"channelHash"`
 	EphemeralPubKey string       `json:"ephemeralPubKey,omitempty"`
 	PathData        string       `json:"pathData,omitempty"`
 	Tag             uint32       `json:"tag,omitempty"`
@@ -255,9 +255,10 @@ func decodeGrpTxt(buf []byte) Payload {
 	if len(buf) < 3 {
 		return Payload{Type: "GRP_TXT", Error: "too short", RawHex: hex.EncodeToString(buf)}
 	}
+	ch := int(buf[0])
 	return Payload{
 		Type:          "GRP_TXT",
-		ChannelHash:   int(buf[0]),
+		ChannelHash:   &ch,
 		MAC:           hex.EncodeToString(buf[1:3]),
 		EncryptedData: hex.EncodeToString(buf[3:]),
 	}

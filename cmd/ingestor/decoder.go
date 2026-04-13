@@ -117,8 +117,8 @@ type Payload struct {
 	Feat2         *int         `json:"feat2,omitempty"`
 	BatteryMv     *int         `json:"battery_mv,omitempty"`
 	TemperatureC  *float64     `json:"temperature_c,omitempty"`
-	ChannelHash   int          `json:"channelHash,omitempty"`
-	ChannelHashHex   string    `json:"channelHashHex,omitempty"`
+	ChannelHash    *int   `json:"channelHash"`
+	ChannelHashHex string `json:"channelHashHex,omitempty"`
 	DecryptionStatus string    `json:"decryptionStatus,omitempty"`
 	Channel          string    `json:"channel,omitempty"`
 	Text             string    `json:"text,omitempty"`
@@ -433,7 +433,7 @@ func decodeGrpTxt(buf []byte, channelKeys map[string]string) Payload {
 			return Payload{
 				Type:             "CHAN",
 				Channel:          name,
-				ChannelHash:      channelHash,
+				ChannelHash:      &channelHash,
 				ChannelHashHex:   channelHashHex,
 				DecryptionStatus: "decrypted",
 				Sender:           result.Sender,
@@ -443,7 +443,7 @@ func decodeGrpTxt(buf []byte, channelKeys map[string]string) Payload {
 		}
 		return Payload{
 			Type:             "GRP_TXT",
-			ChannelHash:      channelHash,
+			ChannelHash:      &channelHash,
 			ChannelHashHex:   channelHashHex,
 			DecryptionStatus: "decryption_failed",
 			MAC:              mac,
@@ -453,7 +453,7 @@ func decodeGrpTxt(buf []byte, channelKeys map[string]string) Payload {
 
 	return Payload{
 		Type:             "GRP_TXT",
-		ChannelHash:      channelHash,
+		ChannelHash:      &channelHash,
 		ChannelHashHex:   channelHashHex,
 		DecryptionStatus: "no_key",
 		MAC:              mac,

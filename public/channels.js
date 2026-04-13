@@ -12,13 +12,30 @@
   let observerIataById = {};
   let observerIataByName = {};
   let messageRequestId = 0;
+  let msgSortOrder = 'newest'; // 'newest' | 'oldest'
+  let _mobileNavPushed = false;   // true when we pushState'd for mobile channel view
+  let _skipNextPopstate = false;  // suppress the popstate triggered by our own history.back()
+  let _popstateHandler = null;    // stored so destroy() can remove it
   var _nodeCacheTTL = 5 * 60 * 1000; // 5 minutes
   const INACTIVE_MS = 8 * 60 * 60 * 1000; // 8 hours
   const unreadChannels = new Set(); // hashes with new unread messages
-  const BLOCKED_KEY = 'meshcore-blocked-channels';
   const USER_CHANNELS_KEY = 'meshcore-user-channels';
-  const PERMANENT_BLOCK_NAMES = new Set(['#wardriving', 'unknown']); // hardcoded, cannot be unblocked
-  let showingBlockedList = false;
+  const PRIVATE_KEYS_KEY = 'meshcore-private-keys';
+  const PERMANENT_BLOCK_NAMES = new Set(['#wardriving', '#wardrive', 'unknown']); // hardcoded
+
+  // Sort order: public first, then user-added private channels (🔒), then #channels, all alpha within group
+  function channelSortKey(ch) {
+    const name = (ch.name || ch.hash || '').toLowerCase();
+    if (name === 'public') return 0;
+    if (ch.isPrivate) return 1;
+    return 2;
+  }
+  function compareChannels(a, b) {
+    const ka = channelSortKey(a), kb = channelSortKey(b);
+    if (ka !== kb) return ka - kb;
+    const an = a.name || a.hash, bn = b.name || b.hash;
+    return an.localeCompare(bn, undefined, { numeric: true, sensitivity: 'base' });
+  }
 
   function getUserAddedChannels() {
     try { return JSON.parse(localStorage.getItem(USER_CHANNELS_KEY) || '[]'); } catch (_) { return []; }
@@ -32,19 +49,114 @@
     localStorage.setItem(USER_CHANNELS_KEY, JSON.stringify(list));
   }
 
-  function getBlockedChannels() {
-    try { return new Set(JSON.parse(localStorage.getItem(BLOCKED_KEY) || '[]')); }
-    catch (_) { return new Set(); }
+  // Private channel key management
+  function getPrivateKeys() {
+    try { return JSON.parse(localStorage.getItem(PRIVATE_KEYS_KEY) || '[]'); } catch (_) { return []; }
   }
-  function saveBlockedChannels(set) {
-    try { localStorage.setItem(BLOCKED_KEY, JSON.stringify([...set])); } catch (_) {}
+  function savePrivateKey(entry) { // {name, keyHex, hashByte}
+    const list = getPrivateKeys().filter(k => k.hashByte !== entry.hashByte);
+    list.push(entry);
+    localStorage.setItem(PRIVATE_KEYS_KEY, JSON.stringify(list));
   }
-  function blockChannel(hash) {
-    const s = getBlockedChannels(); s.add(hash); saveBlockedChannels(s);
-    // Also remove from user-added list if it was locally added
+  function removePrivateKey(hashByte) {
+    const list = getPrivateKeys().filter(k => k.hashByte !== hashByte);
+    localStorage.setItem(PRIVATE_KEYS_KEY, JSON.stringify(list));
+  }
+  function getPrivateKeyForHash(hashByte) {
+    return getPrivateKeys().find(k => k.hashByte === hashByte) || null;
+  }
+  // Synthetic hash string used in channels[] for private channels: "priv:NN" (NN = decimal hashByte)
+  function privateChannelId(hashByte) { return 'priv:' + hashByte; }
+
+  // Compute SHA256(keyBytes)[0] — returns Promise<number>
+  async function computeChannelHashByte(keyHex) {
+    const keyBytes = hexToUint8(keyHex);
+    const digest = await crypto.subtle.digest('SHA-256', keyBytes);
+    return new Uint8Array(digest)[0];
+  }
+
+  function hexToUint8(hex) {
+    const arr = new Uint8Array(hex.length / 2);
+    for (let i = 0; i < arr.length; i++) arr[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+    return arr;
+  }
+
+  // AES-128-ECB decrypt using Web Crypto.
+  // SubtleCrypto has no ECB mode and validates PKCS#7 padding on AES-CBC, so we:
+  // 1. Use AES-CTR to compute a proper trailing PKCS#7 padding block (0x10 * 16)
+  //    C_extra = AES_encrypt(C_last XOR 0x10*16) satisfies: AES_decrypt(C_extra) XOR C_last = 0x10*16
+  // 2. Append C_extra and decrypt the whole ciphertext with AES-CBC (IV=0)
+  // 3. Undo the CBC XOR chaining: P_ecb[i] = P_cbc[i] XOR C[i-1] (P_cbc[0] = P_ecb[0] already, IV=0)
+  async function aesEcbDecrypt(keyHex, ciphertextHex) {
+    const keyBytes = hexToUint8(keyHex);
+    const C = hexToUint8(ciphertextHex);
+    if (C.length === 0 || C.length % 16 !== 0) return null;
+    try {
+      // Step 1: build a trailing block that gives valid 0x10*16 PKCS#7 padding in CBC decrypt.
+      //   In CBC: P_extra = AES_decrypt(C_extra) XOR C_last
+      //   We want P_extra = 0x10*16, so AES_decrypt(C_extra) = C_last XOR 0x10*16
+      //   i.e. C_extra = AES_encrypt(C_last XOR 0x10*16)
+      //   AES-CTR with counter = (C_last XOR 0x10*16) encrypting 16 zero bytes = AES_encrypt(counter).
+      const counterBlock = new Uint8Array(16);
+      for (let i = 0; i < 16; i++) counterBlock[i] = C[C.length - 16 + i] ^ 0x10;
+      const ctrKey = await crypto.subtle.importKey('raw', keyBytes, { name: 'AES-CTR' }, false, ['encrypt']);
+      const C_extra = new Uint8Array(await crypto.subtle.encrypt(
+        { name: 'AES-CTR', counter: counterBlock, length: 128 }, ctrKey, new Uint8Array(16)));
+
+      // Step 2: decrypt [C | C_extra] with AES-CBC, IV=0. Padding = 0x10*16 → stripped, result = C.length bytes.
+      const extended = new Uint8Array(C.length + 16);
+      extended.set(C); extended.set(C_extra, C.length);
+      const cbcKey = await crypto.subtle.importKey('raw', keyBytes, { name: 'AES-CBC' }, false, ['decrypt']);
+      const cbcResult = new Uint8Array(await crypto.subtle.decrypt(
+        { name: 'AES-CBC', iv: new Uint8Array(16) }, cbcKey, extended));
+
+      // Step 3: undo CBC chaining to get ECB plaintext.
+      //   cbcResult[block i] = AES_decrypt(C[i]) XOR C[i-1]  (C[-1] = IV = 0)
+      //   plain_ecb[block i] = cbcResult[block i] XOR C[i-1]
+      //   For block 0 (i=0): cbcResult[0] = AES_decrypt(C[0]) XOR 0 = plain_ecb[0] — already correct.
+      const plain = new Uint8Array(C.length);
+      for (let i = 0; i < C.length; i++) {
+        plain[i] = cbcResult[i] ^ (i < 16 ? 0 : C[i - 16]);
+      }
+      return plain;
+    } catch (_) { return null; }
+  }
+
+  // Verify MAC: HMAC-SHA256(key || 16_zero_bytes, ciphertext), compare first 2 bytes
+  async function verifyMac(keyHex, ciphertextHex, macHex) {
+    const keyBytes = hexToUint8(keyHex);
+    const secret = new Uint8Array(32);
+    secret.set(keyBytes, 0); // key || 16 zero bytes
+    const cryptoKey = await crypto.subtle.importKey('raw', secret, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    const cipherBytes = hexToUint8(ciphertextHex);
+    const sig = new Uint8Array(await crypto.subtle.sign('HMAC', cryptoKey, cipherBytes));
+    const mac = hexToUint8(macHex);
+    return sig[0] === mac[0] && sig[1] === mac[1];
+  }
+
+  // Parse decrypted plaintext: [timestamp 4 LE][flags 1][null-terminated UTF-8]
+  function parsePlaintext(plain) {
+    if (!plain || plain.length < 6) return null;
+    const timestamp = plain[0] | (plain[1] << 8) | (plain[2] << 16) | (plain[3] << 24);
+    // flags = plain[4]
+    // message text starts at byte 5, null-terminated
+    let end = 5;
+    while (end < plain.length && plain[end] !== 0) end++;
+    const text = new TextDecoder().decode(plain.slice(5, end));
+    return { timestamp, text };
+  }
+
+  function removeFromSidebar(hash) {
     const ch = channels.find(c => c.hash === hash);
-    if (ch && ch.userAdded) removeUserAddedChannel(ch.name);
-    // If this was the selected channel, deselect it
+    if (ch) {
+      ch.userAdded = false;
+      if (ch.isPrivate && ch.hashByte !== undefined) {
+        removePrivateKey(ch.hashByte);
+        channels.splice(channels.indexOf(ch), 1);
+      } else if (ch.name) {
+        removeUserAddedChannel(ch.name);
+      }
+    }
     if (selectedHash === hash) {
       selectedHash = null; messages = [];
       history.replaceState(null, '', '#/channels');
@@ -54,43 +166,7 @@
       if (msgEl) msgEl.innerHTML = '<div class="ch-empty">Choose a channel from the sidebar to view messages</div>';
       document.querySelector('.ch-layout')?.classList.remove('ch-show-main');
     }
-    renderChannelList(); updateBlockedBadge();
-  }
-  function unblockChannel(hash) {
-    const s = getBlockedChannels(); s.delete(hash); saveBlockedChannels(s);
-    renderChannelList(); updateBlockedBadge();
-    if (showingBlockedList) renderBlockedList();
-  }
-  function updateBlockedBadge() {
-    const badge = document.getElementById('chBlockedBadge');
-    if (!badge) return;
-    const count = getBlockedChannels().size;
-    badge.textContent = count ? `Hidden (${count})` : 'Hidden';
-    badge.classList.toggle('has-blocked', count > 0);
-  }
-  function renderBlockedList() {
-    const el = document.getElementById('chList');
-    if (!el) return;
-    const blocked = getBlockedChannels();
-    if (!blocked.size) {
-      el.innerHTML = '<div class="ch-empty">No hidden channels</div>';
-      return;
-    }
-    const items = [...blocked].map(hash => {
-      const ch = channels.find(c => c.hash === hash);
-      const name = ch?.name || hash.slice(0, 8);
-      const color = getChannelColor(hash);
-      const abbr = name.startsWith('#') ? name.slice(1, 3).toUpperCase() : name.slice(0, 2).toUpperCase();
-      return `<div class="ch-blocked-item">
-        <div class="ch-badge" style="--ch-color:${color};background:${color}"><span class="ch-badge-shine"></span>${escapeHtml(abbr)}</div>
-        <span class="ch-blocked-name">${escapeHtml(name)}</span>
-        <button class="ch-unblock-btn" data-hash="${hash}">Unhide</button>
-      </div>`;
-    });
-    el.innerHTML = items.join('');
-    el.querySelectorAll('.ch-unblock-btn').forEach(btn => {
-      btn.addEventListener('click', () => unblockChannel(btn.dataset.hash));
-    });
+    renderChannelList();
   }
 
   function getSelectedRegionsSnapshot() {
@@ -171,7 +247,6 @@
     const msgEl = document.getElementById('chMessages');
     if (msgEl) msgEl.innerHTML = '<div class="ch-empty">Choose a channel from the sidebar to view messages</div>';
     document.querySelector('.ch-layout')?.classList.remove('ch-show-main');
-    document.getElementById('chScrollBtn')?.classList.add('hidden');
     return true;
   }
 
@@ -330,6 +405,12 @@
     if (layout) layout.classList.remove('ch-show-main');
     var sidebar = document.querySelector('.ch-sidebar');
     if (sidebar) sidebar.style.pointerEvents = '';
+    // If we pushed a history entry for mobile nav, pop it to keep history in sync
+    if (_mobileNavPushed) {
+      _mobileNavPushed = false;
+      _skipNextPopstate = true;
+      history.back();
+    }
   }
 
   // WCAG AA compliant colors — ≥4.5:1 contrast on both white and dark backgrounds
@@ -408,6 +489,99 @@
   }
 
   let regionChangeHandler = null;
+  let availModalOpen = false;
+  let modalChannels = null; // full unfiltered channel list for the modal
+
+  function openAvailModal() {
+    availModalOpen = true;
+    modalChannels = null;
+    const modal = document.getElementById('chAvailModal');
+    if (modal) modal.classList.remove('hidden');
+    const search = document.getElementById('chAvailSearch');
+    if (search) { search.value = ''; search.focus(); }
+    renderAvailModal();
+    // Fetch all channels (no region filter) for complete modal list
+    api('/channels', { ttl: 3000 }).then(data => {
+      if (!availModalOpen) return;
+      const serverChannels = (data.channels || []).map(ch => {
+        ch.lastActivityMs = ch.lastActivity ? new Date(ch.lastActivity).getTime() : 0;
+        return ch;
+      });
+      // Mark which are user-added; include user-added stubs not returned by server
+      const userNames = new Set(getUserAddedChannels());
+      serverChannels.forEach(ch => { if (userNames.has(ch.name)) ch.userAdded = true; });
+      const stubs = channels.filter(ch => ch.userAdded && !serverChannels.some(s => s.name === ch.name));
+      modalChannels = [...serverChannels, ...stubs];
+      renderAvailModal();
+    }).catch(() => {});
+  }
+
+  function closeAvailModal() {
+    availModalOpen = false;
+    modalChannels = null;
+    const modal = document.getElementById('chAvailModal');
+    if (modal) modal.classList.add('hidden');
+  }
+
+  function renderAvailModal() {
+    const listEl = document.getElementById('chAvailList');
+    if (!listEl) return;
+    const userAdded = new Set(getUserAddedChannels());
+    const query = (document.getElementById('chAvailSearch')?.value || '').trim().toLowerCase();
+    const visible = [...(modalChannels || channels)]
+      .filter(ch => {
+        if (ch.name && PERMANENT_BLOCK_NAMES.has(ch.name.toLowerCase())) return false;
+        if (ch.name && ch.name.startsWith('~')) return false; // encrypted, not yet decrypted
+        if (query && !(ch.name || ch.hash).toLowerCase().includes(query)) return false;
+        return true;
+      })
+      .sort((a, b) => {
+        const an = a.name || a.hash, bn = b.name || b.hash;
+        if (an === 'public') return -1; if (bn === 'public') return 1;
+        return an.localeCompare(bn, undefined, { numeric: true, sensitivity: 'base' });
+      });
+    if (!visible.length) {
+      listEl.innerHTML = `<div class="ch-empty">${query ? 'No channels match your search' : 'No channels discovered yet'}</div>`;
+      return;
+    }
+    const now = Date.now();
+    listEl.innerHTML = visible.map(ch => {
+      const name = ch.name || ch.hash;
+      const color = getChannelColor(ch.hash);
+      const abbr = name.startsWith('#') ? name.slice(1, 3).toUpperCase() : name.slice(0, 2).toUpperCase();
+      const isPublic = name.toLowerCase() === 'public';
+      const isAdded = isPublic || ch.userAdded || userAdded.has(name);
+      const count = ch.messageCount ? `${ch.messageCount} msg${ch.messageCount === 1 ? '' : 's'}` : '';
+      const time = ch.lastActivityMs ? formatSecondsAgo(Math.floor((now - ch.lastActivityMs) / 1000)) : '';
+      return `<div class="ch-avail-item">
+        <div class="ch-badge ch-avail-badge" style="--ch-color:${color};background:${color}" aria-hidden="true"><span class="ch-badge-shine"></span>${escapeHtml(abbr)}</div>
+        <div class="ch-avail-item-info">
+          <span class="ch-avail-item-name">${escapeHtml(name)}</span>
+          ${count || time ? `<span class="ch-avail-item-meta">${[count, time].filter(Boolean).join(' · ')}</span>` : ''}
+        </div>
+        ${isAdded
+          ? `<span class="ch-avail-added">Added ✓</span>`
+          : `<button class="ch-avail-add-btn" data-channel-name="${escapeHtml(name)}" data-channel-hash="${escapeHtml(ch.hash)}">Add</button>`
+        }
+      </div>`;
+    }).join('');
+    listEl.querySelectorAll('.ch-avail-add-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const name = btn.dataset.channelName;
+        const hash = btn.dataset.channelHash;
+        saveUserAddedChannel(name);
+        const ch = channels.find(c => c.hash === hash);
+        if (ch) ch.userAdded = true;
+        else channels.push({ hash, name, lastActivityMs: 0, messageCount: 0, userAdded: true });
+        if (modalChannels) {
+          const mch = modalChannels.find(c => c.hash === hash);
+          if (mch) mch.userAdded = true;
+        }
+        renderChannelList();
+        renderAvailModal();
+      });
+    });
+  }
 
   function init(app, routeParam) {
     var _initUrlParams = getHashParams();
@@ -418,14 +592,9 @@
         <div class="ch-sidebar-header">
           <div class="ch-sidebar-title">
             <span class="ch-icon">💬</span> Channels
-            <button class="ch-blocked-badge" id="chBlockedBadge" title="Manage hidden channels">Hidden</button>
-            <button class="ch-add-btn" id="chAddBtn" title="Add a channel">+</button>
           </div>
-          <div class="ch-add-form hidden" id="chAddForm">
-            <input class="ch-add-input" id="chAddInput" type="text" placeholder="#channelname" maxlength="65" spellcheck="false" />
-            <button class="ch-add-submit" id="chAddSubmit">Add</button>
-            <div class="ch-add-msg" id="chAddMsg"></div>
-          </div>
+          <button class="ch-add-btn" id="chAddBtn" title="Browse available channels">Available Channels</button>
+          <button class="ch-add-btn ch-add-btn-private" id="chPrivateToggle" type="button" title="Add a private channel with a local AES key">🔒 Add Private Channel</button>
         </div>
         <div id="chRegionFilter" class="region-filter-container" style="padding:0 8px"></div>
         <div class="ch-channel-list" id="chList" role="listbox" aria-label="Channels">
@@ -437,53 +606,133 @@
         <div class="ch-main-header" id="chHeader">
           <button class="ch-back-btn" id="chBackBtn" aria-label="Back to channels" data-action="ch-back"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg></button>
           <span class="ch-header-text"><span class="ch-header-name">Select a channel</span></span>
+          <button class="ch-add-btn ch-sort-pill" id="chSortBtn">Sort: newest at top</button>
         </div>
         <div class="ch-messages" id="chMessages">
           <div class="ch-empty">Choose a channel from the sidebar to view messages</div>
         </div>
         <span id="chAriaLive" class="sr-only" aria-live="polite"></span>
-        <button class="ch-scroll-btn hidden" id="chScrollBtn">↓ New messages</button>
       </div>
     </div>`;
 
-    // Add channel form
-    const addBtn = document.getElementById('chAddBtn');
-    const addForm = document.getElementById('chAddForm');
-    const addInput = document.getElementById('chAddInput');
-    const addSubmit = document.getElementById('chAddSubmit');
-    const addMsg = document.getElementById('chAddMsg');
-    if (addBtn) {
-      addBtn.addEventListener('click', () => {
-        addForm.classList.toggle('hidden');
-        if (!addForm.classList.contains('hidden')) addInput.focus();
-      });
-      const doAdd = () => {
-        const raw = addInput.value.trim();
-        if (!raw) return;
-        const name = raw.startsWith('#') ? raw : '#' + raw;
-        saveUserAddedChannel(name);
-        addMsg.style.color = '';
-        addMsg.classList.remove('ch-add-msg-error');
-        addMsg.innerHTML = name + ' added &mdash; will appear after first message is received';
-        addInput.value = '';
-        setTimeout(() => { addForm.classList.add('hidden'); addMsg.textContent = ''; }, 4000);
-        loadChannels(true);
-      };
-      addSubmit.addEventListener('click', doAdd);
-      addInput.addEventListener('keydown', e => { if (e.key === 'Enter') doAdd(); });
-    }
+    // Inject Available Channels modal
+    const modalEl = document.createElement('div');
+    modalEl.id = 'chAvailModal';
+    modalEl.className = 'ch-avail-modal hidden';
+    modalEl.innerHTML = `
+      <div class="ch-avail-backdrop" id="chAvailBackdrop"></div>
+      <div class="ch-avail-panel">
+        <div class="ch-avail-header">
+          <span class="ch-avail-title">Available Channels</span>
+          <button class="ch-avail-close" id="chAvailClose" aria-label="Close">✕</button>
+        </div>
+        <div class="ch-avail-search-wrap">
+          <input class="ch-avail-search" id="chAvailSearch" type="search" placeholder="Search channels…" autocomplete="off" spellcheck="false" />
+        </div>
+        <p class="ch-avail-hint">Channels heard by the server. Tap <strong>Add</strong> to pin a channel to your sidebar.</p>
+        <div class="ch-avail-list" id="chAvailList"><div class="ch-loading">Loading…</div></div>
+      </div>`;
+    app.appendChild(modalEl);
 
-    // Blocked badge toggle
-    const blockedBadge = document.getElementById('chBlockedBadge');
-    if (blockedBadge) {
-      updateBlockedBadge();
-      blockedBadge.addEventListener('click', () => {
-        showingBlockedList = !showingBlockedList;
-        blockedBadge.classList.toggle('active', showingBlockedList);
-        if (showingBlockedList) renderBlockedList();
-        else renderChannelList();
-      });
+    // Private channel modal
+    const privateModalEl = document.createElement('div');
+    privateModalEl.id = 'chPrivateModal';
+    privateModalEl.className = 'ch-avail-modal hidden';
+    privateModalEl.innerHTML = `
+      <div class="ch-avail-backdrop" id="chPrivateBackdrop"></div>
+      <div class="ch-avail-panel ch-private-panel">
+        <div class="ch-avail-header">
+          <span class="ch-avail-title">🔒 Add Private Channel</span>
+          <button class="ch-avail-close" id="chPrivateClose" aria-label="Close">✕</button>
+        </div>
+        <div class="ch-private-modal-body">
+          <p class="ch-private-hint">Enter a display name and paste your 32-character hex AES-128 key. The key is stored locally only — it is never sent to the server.</p>
+          <div class="ch-private-field">
+            <label for="chPrivateName">Display name</label>
+            <input type="text" id="chPrivateName" placeholder="e.g. My Private Channel" maxlength="64" autocomplete="off" spellcheck="false" />
+          </div>
+          <div class="ch-private-field">
+            <label for="chPrivateKey">AES key (32 hex chars)</label>
+            <input type="text" id="chPrivateKey" placeholder="e.g. 0123456789abcdef0123456789abcdef" maxlength="32" autocomplete="off" spellcheck="false" class="mono" />
+          </div>
+          <div class="ch-private-error hidden" id="chPrivateError"></div>
+          <button class="ch-private-save" id="chPrivateSave" type="button">Save Private Channel</button>
+        </div>
+      </div>`;
+    app.appendChild(privateModalEl);
+
+    // Sort toggle
+    document.getElementById('chSortBtn').addEventListener('click', () => {
+      msgSortOrder = msgSortOrder === 'newest' ? 'oldest' : 'newest';
+      document.getElementById('chSortBtn').textContent = msgSortOrder === 'newest' ? 'Sort: newest at top' : 'Sort: newest at bottom';
+      renderMessages();
+      const msgEl = document.getElementById('chMessages');
+      if (msgEl) { if (msgSortOrder === 'newest') msgEl.scrollTop = 0; else msgEl.scrollTop = msgEl.scrollHeight; }
+    });
+
+    // Available Channels button + modal wiring
+    const addBtn = document.getElementById('chAddBtn');
+    if (addBtn) addBtn.addEventListener('click', openAvailModal);
+    document.getElementById('chAvailClose').addEventListener('click', closeAvailModal);
+    document.getElementById('chAvailBackdrop').addEventListener('click', closeAvailModal);
+    document.getElementById('chAvailSearch').addEventListener('input', renderAvailModal);
+
+    // Private channel modal wiring
+    function openPrivateModal() {
+      document.getElementById('chPrivateModal').classList.remove('hidden');
+      document.getElementById('chPrivateError').classList.add('hidden');
+      document.getElementById('chPrivateName').focus();
     }
+    function closePrivateModal() {
+      document.getElementById('chPrivateModal').classList.add('hidden');
+      document.getElementById('chPrivateName').value = '';
+      document.getElementById('chPrivateKey').value = '';
+      document.getElementById('chPrivateError').classList.add('hidden');
+    }
+    document.getElementById('chPrivateToggle').addEventListener('click', openPrivateModal);
+    document.getElementById('chPrivateClose').addEventListener('click', closePrivateModal);
+    document.getElementById('chPrivateBackdrop').addEventListener('click', closePrivateModal);
+    document.getElementById('chPrivateModal').addEventListener('keydown', e => {
+      if (e.key === 'Escape') closePrivateModal();
+    });
+    document.getElementById('chPrivateSave').addEventListener('click', async () => {
+      const nameEl = document.getElementById('chPrivateName');
+      const keyEl = document.getElementById('chPrivateKey');
+      const errEl = document.getElementById('chPrivateError');
+      const name = nameEl.value.trim();
+      const keyHex = keyEl.value.trim().toLowerCase();
+      errEl.classList.add('hidden');
+      errEl.textContent = '';
+      if (!name) { errEl.textContent = 'Display name is required.'; errEl.classList.remove('hidden'); return; }
+      if (!/^[0-9a-f]{32}$/.test(keyHex)) { errEl.textContent = 'Key must be exactly 32 hex characters (a-f, 0-9).'; errEl.classList.remove('hidden'); return; }
+      const saveBtn = document.getElementById('chPrivateSave');
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving…';
+      try {
+        const hashByte = await computeChannelHashByte(keyHex);
+        // Check for hash collision with existing private key
+        const existing = getPrivateKeyForHash(hashByte);
+        if (existing && existing.keyHex !== keyHex) {
+          errEl.textContent = `Hash collision: this key byte (${hashByte}) is already used by "${existing.name}".`;
+          errEl.classList.remove('hidden');
+          return;
+        }
+        savePrivateKey({ name, keyHex, hashByte });
+        // Add to channels sidebar
+        const id = privateChannelId(hashByte);
+        if (!channels.some(c => c.hash === id)) {
+          channels.push({ hash: id, name, lastActivityMs: 0, messageCount: 0, userAdded: true, isPrivate: true, hashByte });
+        }
+        renderChannelList();
+        closePrivateModal();
+      } catch (e) {
+        errEl.textContent = 'Error: ' + e.message;
+        errEl.classList.remove('hidden');
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save Private Channel';
+      }
+    });
 
     RegionFilter.init(document.getElementById('chRegionFilter'));
     regionChangeHandler = RegionFilter.onChange(function () {
@@ -519,10 +768,22 @@
     });
     _themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
+    // Mobile: intercept browser back gesture while in channel message view
+    _popstateHandler = function () {
+      if (_skipNextPopstate) { _skipNextPopstate = false; return; }
+      var layout = app.querySelector('.ch-layout');
+      if (layout && layout.classList.contains('ch-show-main')) {
+        _mobileNavPushed = false; // browser already popped the entry
+        chBack();
+      }
+    };
+    window.addEventListener('popstate', _popstateHandler);
+
     // #87: Fix pointer-events during mobile slide transition
     var chMain = app.querySelector('.ch-main');
     var chSidebar = app.querySelector('.ch-sidebar');
-    chMain.addEventListener('transitionend', function () {
+    chMain.addEventListener('transitionend', function (e) {
+      if (e.target !== chMain) return;
       var layout = app.querySelector('.ch-layout');
       if (layout && layout.classList.contains('ch-show-main')) {
         chSidebar.style.pointerEvents = 'none';
@@ -558,9 +819,7 @@
     msgEl.addEventListener('scroll', () => {
       const atBottom = msgEl.scrollHeight - msgEl.scrollTop - msgEl.clientHeight < 60;
       autoScroll = atBottom;
-      document.getElementById('chScrollBtn').classList.toggle('hidden', atBottom);
     });
-    document.getElementById('chScrollBtn').addEventListener('click', scrollToBottom);
 
     // Event delegation for node clicks and hovers (click + touchend for mobile reliability)
     function handleNodeTap(e) {
@@ -734,8 +993,9 @@
       }
 
       if (channelListDirty) {
-        channels.sort((a, b) => { const an = a.name || a.hash, bn = b.name || b.hash; if (an === 'public') return -1; if (bn === 'public') return 1; return an.localeCompare(bn, undefined, { numeric: true, sensitivity: 'base' }); });
+        channels.sort((a, b) => { return compareChannels(a, b); });
         renderChannelList();
+        if (availModalOpen) renderAvailModal();
       }
       if (messagesDirty) {
         renderMessages();
@@ -747,10 +1007,80 @@
         }
         var msgEl = document.getElementById('chMessages');
         if (msgEl && autoScroll) scrollToBottom();
-        else {
-          document.getElementById('chScrollBtn')?.classList.remove('hidden');
-          var liveEl = document.getElementById('chAriaLive');
-          if (liveEl) liveEl.textContent = 'New message received';
+      }
+    }
+
+    async function processPrivateWSBatch(msgs, selectedRegions) {
+      var privateKeys = getPrivateKeys();
+      if (!privateKeys.length) return;
+
+      // Only look at raw GRP_TXT packets (no .channel — server couldn't decrypt)
+      var grpPkts = msgs.filter(function (m) {
+        if (m.type !== 'packet') return false;
+        var payload = m.data?.decoded?.payload;
+        return payload && !payload.channel && payload.encryptedData && payload.mac;
+      });
+      if (!grpPkts.length) return;
+
+      for (var i = 0; i < grpPkts.length; i++) {
+        var m = grpPkts[i];
+        if (!shouldProcessWSMessageForRegion(m, selectedRegions, observerIataById, observerIataByName)) continue;
+        var payload = m.data.decoded.payload;
+        var hashHex = payload.channelHashHex;
+        if (!hashHex) continue;
+        var hashByte = parseInt(hashHex, 16);
+        var pk = privateKeys.find(function (k) { return k.hashByte === hashByte; });
+        if (!pk) continue;
+
+        var pktHash = m.data?.hash || null;
+        var chId = privateChannelId(hashByte);
+
+        // Deduplicate by packet hash
+        if (pktHash && messages.some(function (msg) { return msg.packetHash === pktHash && selectedHash === chId; })) continue;
+
+        var macOk = await verifyMac(pk.keyHex, payload.encryptedData, payload.mac);
+        if (!macOk) continue;
+        var plain = await aesEcbDecrypt(pk.keyHex, payload.encryptedData);
+        var parsed = parsePlaintext(plain);
+        if (!parsed || !parsed.text) continue;
+
+        var sender = 'Unknown', text = parsed.text;
+        var ci = text.indexOf(': ');
+        if (ci > 0 && ci < 50) { sender = text.slice(0, ci); text = text.slice(ci + 2); }
+
+        // Update channel sidebar entry
+        var ch = channels.find(function (c) { return c.hash === chId; });
+        if (ch) {
+          ch.messageCount = (ch.messageCount || 0) + 1;
+          ch.lastActivityMs = Date.now();
+          ch.lastSender = sender;
+          ch.lastMessage = truncate(text, 100);
+        }
+        if (chId !== selectedHash) {
+          unreadChannels.add(chId);
+        }
+        renderChannelList();
+
+        // Append to open message view
+        if (selectedHash === chId) {
+          messages.push({
+            sender: sender,
+            text: text,
+            timestamp: new Date().toISOString(),
+            packetHash: pktHash,
+            repeats: 1,
+            observers: [],
+            hops: 0,
+            snr: null,
+            _private: true,
+          });
+          renderMessages();
+          var hdr = document.getElementById('chHeader');
+          if (hdr && ch) {
+            hdr.querySelector('.ch-header-text').innerHTML = `<span class="ch-header-name">🔒 ${escapeHtml(ch.name)}</span><span class="ch-header-count">${messages.length} messages</span>`;
+          }
+          var msgElP = document.getElementById('chMessages');
+          if (msgElP && autoScroll) scrollToBottom();
         }
       }
     }
@@ -758,6 +1088,7 @@
     function handleWSBatch(msgs) {
       var selectedRegions = getSelectedRegionsSnapshot();
       processWSBatch(msgs, selectedRegions);
+      processPrivateWSBatch(msgs, selectedRegions);
     }
 
     wsHandler = debouncedOnWS(function (msgs) {
@@ -787,10 +1118,13 @@
     timeAgoTimer = null;
     if (regionChangeHandler) RegionFilter.offChange(regionChangeHandler);
     regionChangeHandler = null;
+    availModalOpen = false;
     channels = [];
     messages = [];
     selectedHash = null;
     selectedNode = null;
+    _mobileNavPushed = false;
+    if (_popstateHandler) { window.removeEventListener('popstate', _popstateHandler); _popstateHandler = null; }
     hideNodeTooltip();
     const panel = document.getElementById('chNodePanel');
     if (panel) panel.remove();
@@ -803,17 +1137,31 @@
       const data = await api('/channels' + qs, { ttl: CLIENT_TTL.channels });
       channels = (data.channels || []).map(ch => {
         ch.lastActivityMs = ch.lastActivity ? new Date(ch.lastActivity).getTime() : 0;
-        // Auto-block 'unknown' channels
-        if (ch.name && ch.name.trim().toLowerCase() === 'unknown') blockChannel(ch.hash);
         return ch;
-      }).sort((a, b) => { const an = a.name || a.hash, bn = b.name || b.hash; if (an === 'public') return -1; if (bn === 'public') return 1; return an.localeCompare(bn, undefined, { numeric: true, sensitivity: 'base' }); });
+      }).sort((a, b) => { return compareChannels(a, b); });
+      // Public channel must always be present regardless of server response or region filter
+      if (!channels.some(ch => ch.name && ch.name.toLowerCase() === 'public')) {
+        channels.unshift({ hash: 'public', name: 'public', lastActivityMs: 0, messageCount: 0 });
+      }
       // Merge locally-added channels not already returned by the server
       getUserAddedChannels().forEach(name => {
         if (!channels.some(ch => ch.name === name)) {
-          channels.push({ hash: name, name, lastActivityMs: 0, userAdded: true });
+          channels.push({ hash: name, name, lastActivityMs: 0, messageCount: 0, userAdded: true });
+        } else {
+          const ch = channels.find(c => c.name === name);
+          if (ch) ch.userAdded = true;
         }
       });
-      updateBlockedBadge();
+      // Merge private channels (locally stored, key never sent to server)
+      getPrivateKeys().forEach(pk => {
+        const id = privateChannelId(pk.hashByte);
+        if (!channels.some(ch => ch.hash === id)) {
+          channels.push({ hash: id, name: pk.name, lastActivityMs: 0, messageCount: 0, userAdded: true, isPrivate: true, hashByte: pk.hashByte });
+        } else {
+          const ch = channels.find(c => c.hash === id);
+          if (ch) { ch.userAdded = true; ch.isPrivate = true; ch.hashByte = pk.hashByte; }
+        }
+      });
       renderChannelList();
       reconcileSelectionAfterChannelRefresh();
     } catch (e) {
@@ -825,22 +1173,20 @@
   }
 
   function renderChannelList() {
-    if (showingBlockedList) { renderBlockedList(); return; }
     const el = document.getElementById('chList');
     if (!el) return;
 
-    const blocked = getBlockedChannels();
     const now = Date.now();
 
-    // Filter: not blocked, not permanently blocked, not inactive > 8h
+    // Filter: only public channel + user-added channels (not permanently blocked)
     const visible = [...channels]
       .filter(ch => {
-        if (blocked.has(ch.hash)) return false;
         if (ch.name && PERMANENT_BLOCK_NAMES.has(ch.name.toLowerCase())) return false;
-        if (ch.lastActivityMs > 0 && now - ch.lastActivityMs > INACTIVE_MS) return false;
+        const isPublic = ch.name && ch.name.toLowerCase() === 'public';
+        if (!isPublic && !ch.userAdded) return false;
         return true;
       })
-      .sort((a, b) => { const an = a.name || a.hash, bn = b.name || b.hash; if (an === 'public') return -1; if (bn === 'public') return 1; return an.localeCompare(bn, undefined, { numeric: true, sensitivity: 'base' }); });
+      .sort((a, b) => { return compareChannels(a, b); });
 
     if (visible.length === 0) {
       el.innerHTML = '<div class="ch-empty">No active channels</div>';
@@ -849,28 +1195,29 @@
 
     el.innerHTML = visible.map(ch => {
       const name = ch.name || `Channel ${formatHashHex(ch.hash)}`;
+      const isPublic = name.toLowerCase() === 'public';
       const color = getChannelColor(ch.hash);
       const time = ch.lastActivityMs ? formatSecondsAgo(Math.floor((now - ch.lastActivityMs) / 1000)) : '';
       const preview = ch.lastSender && ch.lastMessage
         ? `${ch.lastSender}: ${truncate(ch.lastMessage, 28)}`
-        : `${ch.messageCount} messages`;
+        : ch.messageCount ? `${ch.messageCount} message${ch.messageCount === 1 ? '' : 's'}` : 'No messages yet';
       const sel = selectedHash === ch.hash ? ' selected' : '';
+      const displayName = ch.isPrivate ? '🔒 ' + name : name;
       const abbr = name.startsWith('#') ? name.slice(1, 3).toUpperCase() : name.slice(0, 2).toUpperCase();
       const chColor = window.ChannelColors ? window.ChannelColors.get(ch.hash) : null;
-      const dotStyle = chColor ? ` style="background:${chColor}"` : '';
       const borderStyle = chColor ? ` style="border-left:3px solid ${chColor}"` : '';
 
-      return `<div class="ch-item${sel}" data-hash="${ch.hash}"${borderStyle} role="option" tabindex="0" aria-selected="${selectedHash === ch.hash ? 'true' : 'false'}" aria-label="${escapeHtml(name)}">
+      return `<div class="ch-item${sel}" data-hash="${ch.hash}"${borderStyle} role="option" tabindex="0" aria-selected="${selectedHash === ch.hash ? 'true' : 'false'}" aria-label="${escapeHtml(displayName)}">
         <div class="ch-badge" style="--ch-color:${color};background:${color}" aria-hidden="true"><span class="ch-badge-shine"></span>${escapeHtml(abbr)}</div>
         <span class="ch-pulse-dot" aria-hidden="true"></span>
         <div class="ch-item-body">
           <div class="ch-item-top">
-            <span class="ch-item-name">${escapeHtml(name)}</span>
+            <span class="ch-item-name">${escapeHtml(displayName)}</span>
             <span class="ch-item-time" data-channel-hash="${ch.hash}">${time}</span>
           </div>
           <div class="ch-item-preview">${escapeHtml(preview)}</div>
         </div>
-        <span class="ch-block-btn" data-hash="${ch.hash}" aria-label="Hide ${escapeHtml(name)}" role="button" tabindex="0">✕</span>
+        ${!isPublic ? `<span class="ch-block-btn" data-hash="${ch.hash}" aria-label="Remove ${escapeHtml(name)}" role="button" tabindex="0">✕</span>` : ''}
       </div>`;
     }).join('');
 
@@ -879,7 +1226,7 @@
       if (unreadChannels.has(row.dataset.hash)) row.classList.add('ch-has-unread');
     });
 
-    // Wire clicks on channel rows and block buttons
+    // Wire clicks on channel rows and remove buttons
     el.querySelectorAll('.ch-item').forEach(row => {
       row.addEventListener('click', e => {
         if (e.target.closest('.ch-block-btn') || e.target.closest('.ch-color-dot')) return;
@@ -890,9 +1237,9 @@
       });
     });
     el.querySelectorAll('.ch-block-btn').forEach(btn => {
-      btn.addEventListener('click', e => { e.stopPropagation(); blockChannel(btn.dataset.hash); });
+      btn.addEventListener('click', e => { e.stopPropagation(); removeFromSidebar(btn.dataset.hash); });
       btn.addEventListener('keydown', e => {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); blockChannel(btn.dataset.hash); }
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); removeFromSidebar(btn.dataset.hash); }
       });
     });
   }
@@ -902,7 +1249,15 @@
     const request = beginMessageRequest(hash, rp);
     selectedHash = hash;
     unreadChannels.delete(hash);
+    // Always update the URL first via replaceState (no hashchange, no router re-render).
     history.replaceState(null, '', `#/channels/${encodeURIComponent(hash)}`);
+    // On mobile: push a duplicate entry with the same URL so the back gesture only fires
+    // popstate (not hashchange), letting us intercept it and show the channel list instead
+    // of triggering the SPA router. Only push once — subsequent channel switches reuse it.
+    if (window.matchMedia('(max-width: 640px)').matches && !_mobileNavPushed) {
+      _mobileNavPushed = true;
+      history.pushState({ _chMobileBack: true }, '', location.href);
+    }
     renderChannelList();
     const ch = channels.find(c => c.hash === hash);
     const name = ch?.name || `Channel ${formatHashHex(hash)}`;
@@ -915,6 +1270,12 @@
     const msgEl = document.getElementById('chMessages');
     msgEl.innerHTML = '<div class="ch-loading">Loading messages…</div>';
 
+    // Private channel: fetch raw GRP_TXT packets and decrypt client-side
+    if (ch && ch.isPrivate) {
+      await loadPrivateChannelMessages(ch, request, header, msgEl);
+      return;
+    }
+
     try {
       const regionQs = rp ? '&region=' + encodeURIComponent(rp) : '';
       const data = await api(`/channels/${encodeURIComponent(hash)}/messages?limit=200${regionQs}`, { ttl: CLIENT_TTL.channelMessages });
@@ -924,11 +1285,70 @@
         msgEl.innerHTML = '<div class="ch-empty">Channel not available in selected region</div>';
       } else {
         renderMessages();
-        scrollToBottom();
+        scrollToLatest();
       }
     } catch (e) {
       if (isStaleMessageRequest(request)) return;
       msgEl.innerHTML = `<div class="ch-empty">Failed to load messages: ${e.message}</div>`;
+    }
+  }
+
+  async function loadPrivateChannelMessages(ch, request, header, msgEl) {
+    const pk = getPrivateKeyForHash(ch.hashByte);
+    if (!pk) { msgEl.innerHTML = '<div class="ch-empty">Private key not found — try removing and re-adding this channel</div>'; return; }
+    try {
+      // Fetch newest 200 GRP_TXT packets (DESC), then reverse for chronological display
+      const data = await api('/packets?type=5&limit=200', { ttl: 10000 });
+      if (isStaleMessageRequest(request)) return;
+      const pkts = (data.packets || data.Packets || []).slice().reverse();
+      const decrypted = [];
+      for (const pkt of pkts) {
+        let decoded = pkt.decoded_json;
+        if (typeof decoded === 'string') { try { decoded = JSON.parse(decoded); } catch (_) { continue; } }
+        if (!decoded) continue;
+        // channelHash int is omitted when 0 in old packets — use channelHashHex ("00".."FF") as primary.
+        let channelHash;
+        if (decoded.channelHashHex !== undefined) {
+          channelHash = parseInt(decoded.channelHashHex, 16);
+        } else if (decoded.channelHash !== undefined) {
+          channelHash = decoded.channelHash;
+        } else {
+          continue; // no hash info — skip
+        }
+        if (channelHash !== ch.hashByte) continue;
+        const mac = decoded.mac ?? decoded.payload?.mac;
+        const encryptedData = decoded.encryptedData ?? decoded.payload?.encryptedData;
+        if (!encryptedData || !mac) continue;
+        const macOk = await verifyMac(pk.keyHex, encryptedData, mac);
+        if (!macOk) continue;
+        const plain = await aesEcbDecrypt(pk.keyHex, encryptedData);
+        const parsed = parsePlaintext(plain);
+        if (!parsed || !parsed.text) continue;
+        // Parse "sender: message" format
+        let sender = 'Unknown', text = parsed.text;
+        const ci = text.indexOf(': ');
+        if (ci > 0 && ci < 50) { sender = text.slice(0, ci); text = text.slice(ci + 2); }
+        decrypted.push({
+          sender,
+          text,
+          timestamp: pkt.timestamp || new Date(parsed.timestamp * 1000).toISOString(),
+          packetHash: pkt.hash || null,
+          repeats: 1,
+          observers: pkt.observer_name ? [pkt.observer_name] : [],
+          hops: 0,
+          snr: pkt.snr ?? null,
+          _private: true,
+        });
+      }
+      if (isStaleMessageRequest(request)) return;
+      messages = decrypted;
+      if (ch) { ch.messageCount = decrypted.length; }
+      if (header) header.querySelector('.ch-header-text').innerHTML = `<span class="ch-header-name">🔒 ${escapeHtml(ch.name)}</span><span class="ch-header-count">${decrypted.length} messages</span>`;
+      renderMessages();
+      scrollToLatest();
+    } catch (e) {
+      if (isStaleMessageRequest(request)) return;
+      msgEl.innerHTML = `<div class="ch-empty">Failed to decrypt messages: ${e.message}</div>`;
     }
   }
 
@@ -949,7 +1369,6 @@
       if (opts.regionSwitch && rp && newMsgs.length === 0) {
         messages = [];
         msgEl.innerHTML = '<div class="ch-empty">Channel not available in selected region</div>';
-        document.getElementById('chScrollBtn')?.classList.add('hidden');
         return;
       }
       // #92: Use message ID/hash for change detection instead of count + timestamp
@@ -958,12 +1377,7 @@
       var prevLen = messages.length;
       messages = newMsgs;
       renderMessages();
-      if (wasAtBottom) scrollToBottom();
-      else {
-        document.getElementById('chScrollBtn')?.classList.remove('hidden');
-        var liveEl = document.getElementById('chAriaLive');
-        if (liveEl) liveEl.textContent = Math.max(1, newMsgs.length - prevLen) + ' new messages';
-      }
+      if (wasAtBottom) scrollToLatest();
     } catch {}
   }
 
@@ -972,7 +1386,8 @@
     if (!msgEl) return;
     if (messages.length === 0) { msgEl.innerHTML = '<div class="ch-empty">No messages in this channel yet</div>'; return; }
 
-    msgEl.innerHTML = messages.map(msg => {
+    const sorted = msgSortOrder === 'oldest' ? messages.slice() : messages.slice().reverse();
+    msgEl.innerHTML = sorted.map(msg => {
       const sender = msg.sender || 'Unknown';
       const senderColor = getSenderColor(sender);
       const senderLetter = sender.replace(/[^\w]/g, '').charAt(0).toUpperCase() || '?';
@@ -1004,7 +1419,13 @@
 
   function scrollToBottom() {
     const msgEl = document.getElementById('chMessages');
-    if (msgEl) { msgEl.scrollTop = msgEl.scrollHeight; autoScroll = true; document.getElementById('chScrollBtn')?.classList.add('hidden'); }
+    if (msgEl) { msgEl.scrollTop = msgEl.scrollHeight; autoScroll = true; }
+  }
+
+  function scrollToLatest() {
+    const msgEl = document.getElementById('chMessages');
+    if (!msgEl) return;
+    if (msgSortOrder === 'newest') { msgEl.scrollTop = 0; } else { msgEl.scrollTop = msgEl.scrollHeight; autoScroll = true; }
   }
 
   window._channelsSetStateForTest = function (state) {

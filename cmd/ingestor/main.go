@@ -89,7 +89,7 @@ func main() {
 		}
 	}()
 
-	// Periodic stats logging (every 5 minutes)
+// Periodic stats logging (every 5 minutes)
 	statsTicker := time.NewTicker(5 * time.Minute)
 	go func() {
 		for range statsTicker.C {

@@ -458,8 +458,8 @@ func TestDecodeGrpTxtValid(t *testing.T) {
 	if p.Error != "" {
 		t.Errorf("unexpected error: %s", p.Error)
 	}
-	if p.ChannelHash != 0xAA {
-		t.Errorf("channelHash=%d, want 0xAA", p.ChannelHash)
+	if p.ChannelHash == nil || *p.ChannelHash != 0xAA {
+		t.Errorf("channelHash=%v, want 0xAA", p.ChannelHash)
 	}
 	if p.MAC != "bbcc" {
 		t.Errorf("mac=%s, want bbcc", p.MAC)
@@ -1221,8 +1221,8 @@ func TestDecodeGrpTxtWithDecryption(t *testing.T) {
 	if p.Text != "Bob: Testing 123" {
 		t.Errorf("text=%q, want 'Bob: Testing 123'", p.Text)
 	}
-	if p.ChannelHash != 0xAA {
-		t.Errorf("channelHash=%d, want 0xAA", p.ChannelHash)
+	if p.ChannelHash == nil || *p.ChannelHash != 0xAA {
+		t.Errorf("channelHash=%v, want 0xAA", p.ChannelHash)
 	}
 	if p.ChannelHashHex != "AA" {
 		t.Errorf("channelHashHex=%s, want AA", p.ChannelHashHex)

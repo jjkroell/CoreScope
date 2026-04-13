@@ -2924,7 +2924,7 @@ func (s *PacketStore) GetChannels(region string) []map[string]interface{} {
 	s.channelsCacheMu.Lock()
 	s.channelsCacheRes = channels
 	s.channelsCacheKey = cacheKey
-	s.channelsCacheExp = time.Now().Add(15 * time.Second)
+	s.channelsCacheExp = time.Now().Add(3 * time.Second)
 	s.channelsCacheMu.Unlock()
 
 	return channels

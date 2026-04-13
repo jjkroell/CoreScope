@@ -1,6 +1,16 @@
 (function() {
   'use strict';
 
+  // Patch canvas getContext so leaflet-heat's internal canvas is created with willReadFrequently,
+  // which prevents a browser performance warning when getImageData is called frequently.
+  (function() {
+    var _orig = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function(type, attrs) {
+      if (type === '2d') attrs = Object.assign({ willReadFrequently: true }, attrs || {});
+      return _orig.call(this, type, attrs);
+    };
+  })();
+
   // getParsedPath / getParsedDecoded are in shared packet-helpers.js (loaded before this file)
   var getParsedPath = window.getParsedPath;
   var getParsedDecoded = window.getParsedDecoded;
@@ -864,6 +874,7 @@
           <div class="panel-content" aria-live="polite" aria-relevant="additions" role="log"></div>
         </div>
         <button class="feed-show-btn hidden" id="feedShowBtn" title="Show feed">📋</button>
+        <div class="node-detail-backdrop hidden" id="nodeDetailBackdrop"></div>
         <div class="live-overlay live-node-detail hidden" id="liveNodeDetail">
           <div class="panel-header">
             <button class="panel-corner-btn" data-panel="liveNodeDetail" title="Move panel to next corner" aria-label="Move panel to next corner">◫</button>
@@ -1319,11 +1330,21 @@
     // Node detail panel
     const nodeDetailPanel = document.getElementById('liveNodeDetail');
     const nodeDetailContent = document.getElementById('nodeDetailContent');
-    document.getElementById('nodeDetailClose').addEventListener('click', () => {
+    const nodeDetailBackdrop = document.getElementById('nodeDetailBackdrop');
+
+    function closeNodeDetail() {
       activeNodeDetailKey = null;
       nodeDetailPanel.classList.add('hidden');
-    });
+      if (nodeDetailBackdrop) nodeDetailBackdrop.classList.add('hidden');
+    }
 
+    document.getElementById('nodeDetailClose').addEventListener('click', closeNodeDetail);
+    if (nodeDetailBackdrop) nodeDetailBackdrop.addEventListener('click', closeNodeDetail);
+
+    // Close node detail when tapping the map background on mobile/tablet
+    map.on('click', () => {
+      if (activeNodeDetailKey && window.innerWidth < 1024) closeNodeDetail();
+    });
 
     // Save/restore map view
     const savedView = localStorage.getItem('live-map-view');
@@ -1463,7 +1484,6 @@
     const topNav = document.querySelector('.top-nav');
     if (topNav) { topNav.style.position = 'fixed'; topNav.style.width = '100%'; topNav.style.zIndex = '1100'; }
     _navCleanup = { timeout: null, fn: null };
-    showNav();
   }
 
   function injectSVGFilters() {
@@ -1489,7 +1509,9 @@
     activeNodeDetailKey = pubkey;
     const panel = document.getElementById('liveNodeDetail');
     const content = document.getElementById('nodeDetailContent');
+    const backdrop = document.getElementById('nodeDetailBackdrop');
     panel.classList.remove('hidden');
+    if (backdrop && window.innerWidth < 1024) backdrop.classList.remove('hidden');
     content.innerHTML = '<div style="padding:20px;color:var(--text-muted)">Loading…</div>';
     try {
       const [data, healthData] = await Promise.all([
@@ -1826,7 +1848,7 @@
       permanent: false, direction: 'top', offset: [0, -10], className: 'live-tooltip'
     });
 
-    marker.on('click', () => showNodeDetail(n.public_key));
+    marker.on('click', (e) => { L.DomEvent.stopPropagation(e); showNodeDetail(n.public_key); });
 
     marker._glowMarker = glow;
     marker._baseColor = color;

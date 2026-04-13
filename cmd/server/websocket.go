@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -14,7 +15,18 @@ import (
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 4096,
-	CheckOrigin:     func(r *http.Request) bool { return true },
+	CheckOrigin: func(r *http.Request) bool {
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return true // same-origin requests (curl, native clients) have no Origin
+		}
+		u, err := url.Parse(origin)
+		if err != nil {
+			return false
+		}
+		// Allow same host (handles HTTP and HTTPS, any port forwarding via Caddy)
+		return u.Host == r.Host || u.Hostname() == r.Host
+	},
 }
 
 // Hub manages WebSocket clients and broadcasts.

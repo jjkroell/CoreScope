@@ -839,12 +839,12 @@ func (s *Server) handlePackets(w http.ResponseWriter, r *http.Request) {
 	q := PacketQuery{
 		Limit:    queryInt(r, "limit", 50),
 		Offset:   queryInt(r, "offset", 0),
-		Observer: r.URL.Query().Get("observer"),
-		Hash:     r.URL.Query().Get("hash"),
-		Since:    r.URL.Query().Get("since"),
-		Until:    r.URL.Query().Get("until"),
-		Region:   r.URL.Query().Get("region"),
-		Node:     r.URL.Query().Get("node"),
+		Observer: queryString(r, "observer", 256),
+		Hash:     queryString(r, "hash", 128),
+		Since:    queryString(r, "since", 64),
+		Until:    queryString(r, "until", 64),
+		Region:   queryString(r, "region", 32),
+		Node:     queryString(r, "node", 256),
 		Order:              "DESC",
 		ExpandObservations: r.URL.Query().Get("expand") == "observations",
 	}
@@ -1129,7 +1129,7 @@ func (s *Server) handleNodes(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleNodeSearch(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query().Get("q")
+	q := queryString(r, "q", 256)
 	if strings.TrimSpace(q) == "" {
 		writeJSON(w, NodeSearchResponse{Nodes: []map[string]interface{}{}})
 		return
@@ -2143,7 +2143,32 @@ func queryInt(r *http.Request, key string, def int) int {
 	if err != nil {
 		return def
 	}
+	if n < 0 {
+		return 0
+	}
+	// Enforce per-key maximums to prevent runaway queries
+	switch key {
+	case "limit":
+		if n > 1000 {
+			n = 1000
+		}
+	case "offset":
+		if n > 500000 {
+			n = 500000
+		}
+	}
 	return n
+}
+
+// queryString returns a query parameter value capped to maxLen bytes.
+// Returns "" if the value exceeds the limit, preventing oversized inputs from
+// reaching database queries.
+func queryString(r *http.Request, key string, maxLen int) string {
+	v := r.URL.Query().Get(key)
+	if len(v) > maxLen {
+		return ""
+	}
+	return v
 }
 
 func mergeMap(base map[string]interface{}, overlays ...map[string]interface{}) map[string]interface{} {
