@@ -20,6 +20,7 @@
   "#BOT-BWI": "f7a44e04d697f041dad04b00a94dbf08",
   "#BOT-EUG": "d496f7234ca82955b060853e93ecd0ff",
   "#BOT-GEG": "f53e3053c258277a48ec56d14abce90b",
+  "#BOT-ISLANDS": "aa2ebf6f8d8d8122f7f2ce7be36042c7",
   "#BOT-LAX": "874707f403f84495d3652732683cb7e5",
   "#BOT-OAK": "6d99887b908b683c2be9dcc421ed1c0a",
   "#BOT-OTH": "0c021f39b3c48dc9e0e5a8ed4ba5b38b",
@@ -84,6 +85,7 @@
   "#Bot-Bwi": "569dbd5c26051540881e78d2a957e4ec",
   "#Bot-Eug": "1e4ceddc23105a8e308ba15b7867c69d",
   "#Bot-Geg": "c822899f67e3555702a4a2c80c76172f",
+  "#Bot-Islands": "10ef43d9ea3c5dcb5915e09f104407fa",
   "#Bot-Lax": "227a6bbb15e8a4789e494afc16e38209",
   "#Bot-Oak": "81f25536be2e6e01db9b18402748f42c",
   "#Bot-Oth": "227baebc349fca1ef257db28aedb6bbf",
@@ -538,6 +540,7 @@
   "#bot-bwi": "9c30d6dc16b60851a421dbba26459570",
   "#bot-eug": "8d0d199ce80f4d55a669e7a8fa95b57f",
   "#bot-geg": "407a5c685ac0b9ac43c37e0a18cf78a3",
+  "#bot-islands": "a3312a6a608b013d0793d10d82eaf6ce",
   "#bot-lax": "251debcaac3b7a58988403f7dd53ab5e",
   "#bot-oak": "1fd4eb32c548cc35a781a5e43fa1f3f1",
   "#bot-oth": "7a9e801734b1050aaa47ab24a6682e13",
@@ -811,4 +814,3 @@
   "#yzp": "521ce0d704977a66bcde1f2118885e7b",
   "#yzr": "33720bcbe4c001f8101d7b69ef28e616"
 }
-

@@ -634,6 +634,14 @@
         </div>
         <p class="ch-avail-hint">Channels heard by the server. Tap <strong>Add</strong> to pin a channel to your sidebar.</p>
         <div class="ch-avail-list" id="chAvailList"><div class="ch-loading">Loading…</div></div>
+        <div class="ch-avail-add-manual">
+          <span class="ch-avail-add-manual-label">Add a # channel not yet heard:</span>
+          <div class="ch-avail-add-manual-row">
+            <input class="ch-avail-manual-input" id="chManualInput" type="text" placeholder="#channel-name" maxlength="64" autocomplete="off" spellcheck="false" />
+            <button class="ch-avail-manual-btn" id="chManualAddBtn">Add</button>
+          </div>
+          <div class="ch-avail-manual-error hidden" id="chManualError"></div>
+        </div>
       </div>`;
     app.appendChild(modalEl);
 
@@ -679,6 +687,58 @@
     document.getElementById('chAvailClose').addEventListener('click', closeAvailModal);
     document.getElementById('chAvailBackdrop').addEventListener('click', closeAvailModal);
     document.getElementById('chAvailSearch').addEventListener('input', renderAvailModal);
+
+    // Manual channel add wiring
+    async function doManualAdd() {
+      const input = document.getElementById('chManualInput');
+      const errEl = document.getElementById('chManualError');
+      const btn = document.getElementById('chManualAddBtn');
+      let name = (input.value || '').trim();
+      errEl.classList.add('hidden');
+      if (!name.startsWith('#')) name = '#' + name;
+      if (name.length < 2) {
+        errEl.textContent = 'Channel name must start with # (e.g. #bot-islands)';
+        errEl.classList.remove('hidden');
+        return;
+      }
+      btn.disabled = true;
+      btn.textContent = 'Adding…';
+      try {
+        const resp = await fetch('/api/channels/add', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name })
+        });
+        if (!resp.ok) {
+          const msg = await resp.text();
+          errEl.textContent = msg || 'Failed to add channel';
+          errEl.classList.remove('hidden');
+          return;
+        }
+        // Also pin it to the sidebar (localStorage)
+        saveUserAddedChannel(name);
+        const alreadyKnown = (modalChannels || channels).some(c => c.name === name);
+        if (!alreadyKnown) {
+          const stub = { hash: name, name, lastActivityMs: 0, messageCount: 0, userAdded: true };
+          channels.push(stub);
+          if (modalChannels) modalChannels.push(stub);
+        } else {
+          if (modalChannels) { const mch = modalChannels.find(c => c.name === name); if (mch) mch.userAdded = true; }
+          const ch = channels.find(c => c.name === name); if (ch) ch.userAdded = true;
+        }
+        input.value = '';
+        renderChannelList();
+        renderAvailModal();
+      } catch (e) {
+        errEl.textContent = 'Network error — could not reach server';
+        errEl.classList.remove('hidden');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Add';
+      }
+    }
+    document.getElementById('chManualAddBtn').addEventListener('click', doManualAdd);
+    document.getElementById('chManualInput').addEventListener('keydown', e => { if (e.key === 'Enter') doManualAdd(); });
 
     // Private channel modal wiring
     function openPrivateModal() {

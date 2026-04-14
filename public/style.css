@@ -718,6 +718,20 @@ fieldset.mc-section legend.mc-label { padding: 0; }
   white-space: nowrap; flex-shrink: 0; transition: background 0.15s;
 }
 .ch-avail-add-btn:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.ch-avail-add-manual { border-top: 1px solid var(--border); padding: 10px 14px 12px; flex-shrink: 0; }
+.ch-avail-add-manual-label { font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 6px; }
+.ch-avail-add-manual-row { display: flex; gap: 6px; }
+.ch-avail-manual-input {
+  flex: 1; padding: 5px 10px; font-family: var(--mono); font-size: 13px;
+  background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px;
+}
+.ch-avail-manual-input:focus { border-color: var(--accent); outline: none; }
+.ch-avail-manual-btn {
+  padding: 5px 14px; border-radius: 4px; font-size: 13px; font-weight: 600; cursor: pointer;
+  background: var(--accent); color: #fff; border: none; white-space: nowrap;
+}
+.ch-avail-manual-btn:hover { opacity: 0.88; }
+.ch-avail-manual-error { font-size: 11px; color: var(--status-red); margin-top: 5px; }
 .ch-private-hint { font-size: 11px; color: var(--text-muted); margin: 0 0 4px; line-height: 1.5; }
 .ch-private-field { display: flex; flex-direction: column; gap: 3px; }
 .ch-private-field label { font-size: 11px; font-weight: 600; color: var(--text-muted); }
