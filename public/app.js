@@ -469,10 +469,13 @@ function connectWS() {
     document.getElementById('liveDot')?.classList.add('connected');
     setTraceColor('#22c55e');
     fireBrandPulse();
+    clearInterval(connectWS._pulseInterval);
+    connectWS._pulseInterval = setInterval(fireBrandPulse, 15000);
   };
   ws.onclose = () => {
     document.getElementById('liveDot')?.classList.remove('connected');
     setTraceColor('#94a3b8');
+    clearInterval(connectWS._pulseInterval);
     setTimeout(connectWS, 3000);
   };
   ws.onerror = () => ws.close();
