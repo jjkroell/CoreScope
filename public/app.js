@@ -1187,6 +1187,27 @@ function makeColumnsResizable(tableSelector, storageKey) {
 
   addResizeHandles();
 
+  // Re-init columns when container is resized (orientation change, window resize).
+  // ResizeObserver fires after CSS has settled, so new container width is accurate.
+  if (window.ResizeObserver && table.parentElement) {
+    const _container = table.parentElement;
+    let _lastKnownW = _container.clientWidth;
+    const _ro = new ResizeObserver(() => {
+      const newW = _container.clientWidth;
+      if (!newW || Math.abs(newW - _lastKnownW) < 10) return;
+      _lastKnownW = newW;
+      _ro.disconnect();
+      // Clear handles and inline widths set by this function
+      table.querySelectorAll('.col-resize-handle').forEach(h => h.remove());
+      ths.forEach(th => { th.style.width = ''; th.style.position = ''; });
+      table.style.tableLayout = '';
+      table.style.width = '';
+      delete table.dataset.resizable;
+      makeColumnsResizable(tableSelector, storageKey);
+    });
+    _ro.observe(_container);
+  }
+
   function addResizeHandles() {
   // Add resize handles
   ths.forEach((th, i) => {

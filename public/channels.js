@@ -822,6 +822,32 @@
       handle.addEventListener('mousedown', function (e) { dragging = true; startX = e.clientX; startW = sidebar.getBoundingClientRect().width; e.preventDefault(); });
       document.addEventListener('mousemove', function (e) { if (!dragging) return; var w = Math.max(180, Math.min(600, startW + e.clientX - startX)); sidebar.style.width = w + 'px'; sidebar.style.minWidth = w + 'px'; });
       document.addEventListener('mouseup', function () { if (!dragging) return; dragging = false; localStorage.setItem('channels-sidebar-width', parseInt(sidebar.style.width, 10)); });
+
+      // On orientation change, strip inline width on mobile (<640px) so CSS takes over,
+      // or re-clamp the saved width on larger viewports.
+      var _chResizeTimer = null;
+      function _chResetSidebar() {
+        clearTimeout(_chResizeTimer);
+        _chResizeTimer = setTimeout(function() {
+          if (window.innerWidth <= 640) {
+            sidebar.style.width = '';
+            sidebar.style.minWidth = '';
+          } else {
+            var sv = localStorage.getItem('channels-sidebar-width');
+            if (sv) {
+              var cw = Math.max(180, Math.min(window.innerWidth * 0.6, parseInt(sv, 10)));
+              sidebar.style.width = cw + 'px';
+              sidebar.style.minWidth = '';
+            }
+          }
+        }, 150);
+      }
+      window.addEventListener('resize', _chResetSidebar);
+      window.addEventListener('orientationchange', _chResetSidebar);
+      handle._chCleanup = function() {
+        window.removeEventListener('resize', _chResetSidebar);
+        window.removeEventListener('orientationchange', _chResetSidebar);
+      };
     })();
 
     // #90: Theme change observer — re-render messages on theme toggle
@@ -1200,6 +1226,8 @@
     _mobileNavPushed = false;
     if (_popstateHandler) { window.removeEventListener('popstate', _popstateHandler); _popstateHandler = null; }
     if (_themeObserver) { _themeObserver.disconnect(); _themeObserver = null; }
+    const _chHandle = document.querySelector('.ch-sidebar-resize');
+    if (_chHandle?._chCleanup) { _chHandle._chCleanup(); delete _chHandle._chCleanup; }
     hideNodeTooltip();
     const panel = document.getElementById('chNodePanel');
     if (panel) panel.remove();

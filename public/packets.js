@@ -100,6 +100,7 @@
   let _lastVisibleStart = -1;     // last rendered start index (for dirty checking)
   let _lastVisibleEnd = -1;       // last rendered end index (for dirty checking)
   let _vsScrollHandler = null;    // scroll listener reference
+  let _vsResizeHandler = null;    // orientation/resize handler for vscroll row-height reset
   let _wsRenderTimer = null;      // debounce timer for WS-triggered renders
   let _wsRafId = null;            // rAF id for coalescing WS-triggered renders (#396)
   let _wsRenderDirty = false;     // dirty flag for rAF render coalescing (#396)
@@ -194,6 +195,35 @@
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
     });
+
+    // On orientation change, clear inline width so CSS media queries can take over.
+    // Without this, a JS-set pixel width overrides breakpoint rules (e.g., panel-right: 100% on mobile).
+    let _panelResizeTimer = null;
+    function _resetPanelOnResize() {
+      clearTimeout(_panelResizeTimer);
+      _panelResizeTimer = setTimeout(function() {
+        // If we're below the mobile breakpoint, strip inline widths and let CSS handle it
+        if (window.innerWidth <= 640) {
+          panel.style.width = '';
+          panel.style.minWidth = '';
+        } else {
+          // Re-clamp saved width to current viewport
+          const saved = localStorage.getItem(PANEL_WIDTH_KEY);
+          if (saved) {
+            const clamped = Math.max(280, Math.min(window.innerWidth * 0.7, Number(saved)));
+            panel.style.width = clamped + 'px';
+            panel.style.minWidth = '';
+          }
+        }
+      }, 150);
+    }
+    window.addEventListener('resize', _resetPanelOnResize);
+    window.addEventListener('orientationchange', _resetPanelOnResize);
+    // Store cleanup ref on the handle element so destroy() can remove it
+    handle._cleanupResize = function() {
+      window.removeEventListener('resize', _resetPanelOnResize);
+      window.removeEventListener('orientationchange', _resetPanelOnResize);
+    };
 
     handle.addEventListener('touchstart', (e) => {
       if (e.touches.length !== 1) return;
@@ -617,6 +647,8 @@
     if (_docMenuCloseHandler) { document.removeEventListener('click', _docMenuCloseHandler); _docMenuCloseHandler = null; }
     if (_docColMenuCloseHandler) { document.removeEventListener('click', _docColMenuCloseHandler); _docColMenuCloseHandler = null; }
     if (_pktPopstateHandler) { window.removeEventListener('popstate', _pktPopstateHandler); _pktPopstateHandler = null; }
+    const _resizeHandle = document.getElementById('pktResizeHandle');
+    if (_resizeHandle?._cleanupResize) { _resizeHandle._cleanupResize(); delete _resizeHandle._cleanupResize; }
     _pktMobileNavPushed = false;
     removeAllByopOverlays();
     packets = [];
@@ -1854,6 +1886,26 @@
       });
     };
     scrollContainer.addEventListener('scroll', _vsScrollHandler, { passive: true });
+
+    // Reset row height measurement on orientation/resize so spacer math stays accurate
+    let _vsResizeTimer = null;
+    _vsResizeHandler = function () {
+      clearTimeout(_vsResizeTimer);
+      _vsResizeTimer = setTimeout(function () {
+        _vscrollRowHeightMeasured = false;
+        _lastVisibleStart = -1;
+        _lastVisibleEnd = -1;
+        // Re-measure sticky header offset
+        const stickyTop = document.getElementById('pktStickyTop');
+        if (stickyTop) {
+          const h = stickyTop.offsetHeight;
+          document.getElementById('pktLeft')?.style.setProperty('--pkt-sticky-h', h + 'px');
+        }
+        renderVisibleRows();
+      }, 150);
+    };
+    window.addEventListener('resize', _vsResizeHandler);
+    window.addEventListener('orientationchange', _vsResizeHandler);
   }
 
   function detachVScrollListener() {
@@ -1861,6 +1913,11 @@
     const scrollContainer = document.getElementById('pktLeft');
     if (scrollContainer) scrollContainer.removeEventListener('scroll', _vsScrollHandler);
     _vsScrollHandler = null;
+    if (_vsResizeHandler) {
+      window.removeEventListener('resize', _vsResizeHandler);
+      window.removeEventListener('orientationchange', _vsResizeHandler);
+      _vsResizeHandler = null;
+    }
   }
 
   /** Sort the packets array by the current sort column. Called before renderTableRows. */
