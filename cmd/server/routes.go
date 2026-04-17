@@ -53,9 +53,8 @@ type Server struct {
 	// Router reference for OpenAPI spec generation
 	router *mux.Router
 
-	// Easter egg discovery counter (file-backed, mutex-protected)
-	easterEggMu   sync.Mutex
-	easterEggFile string // path to counter JSON file
+	_hmu   sync.Mutex
+	_hfile string
 }
 
 // PerfStats tracks request performance.
@@ -93,7 +92,7 @@ func NewServer(db *DB, cfg *Config, hub *Hub) *Server {
 		version:       resolveVersion(),
 		commit:        resolveCommit(),
 		buildTime:     resolveBuildTime(),
-		easterEggFile: filepath.Join(filepath.Dir(db.path), "easter_egg.json"),
+		_hfile: filepath.Join(filepath.Dir(db.path), ".hc.json"),
 	}
 }
 
@@ -128,8 +127,7 @@ func (s *Server) RegisterRoutes(r *mux.Router) {
 	r.HandleFunc("/api/config/map", s.handleConfigMap).Methods("GET")
 	r.HandleFunc("/api/config/geo-filter", s.handleConfigGeoFilter).Methods("GET")
 
-	// Easter egg counter (unauthenticated — it's a fun feature, not a write endpoint)
-	r.HandleFunc("/api/easter", s.handleEasterEgg).Methods("POST")
+	r.HandleFunc("/api/v0/metrics/hit", s.handleMetricsHit).Methods("POST")
 
 	// System endpoints
 	r.HandleFunc("/api/health", s.handleHealth).Methods("GET")
@@ -2498,14 +2496,12 @@ func internalError(w http.ResponseWriter, context string, err error) {
 	writeError(w, 500, "internal server error")
 }
 
-// handleEasterEgg increments the global easter-egg discovery counter and returns the new count.
-// The counter is stored in easter_egg.json in the data directory alongside the DB.
-func (s *Server) handleEasterEgg(w http.ResponseWriter, r *http.Request) {
-	s.easterEggMu.Lock()
-	defer s.easterEggMu.Unlock()
+func (s *Server) handleMetricsHit(w http.ResponseWriter, r *http.Request) {
+	s._hmu.Lock()
+	defer s._hmu.Unlock()
 
 	count := 0
-	if data, err := os.ReadFile(s.easterEggFile); err == nil {
+	if data, err := os.ReadFile(s._hfile); err == nil {
 		var v struct{ Count int }
 		if json.Unmarshal(data, &v) == nil {
 			count = v.Count
@@ -2514,7 +2510,7 @@ func (s *Server) handleEasterEgg(w http.ResponseWriter, r *http.Request) {
 	count++
 
 	if out, err := json.Marshal(map[string]int{"count": count}); err == nil {
-		os.WriteFile(s.easterEggFile, out, 0644)
+		os.WriteFile(s._hfile, out, 0644)
 	}
 
 	w.Header().Set("Content-Type", "application/json")

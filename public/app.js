@@ -6,52 +6,51 @@
   let _kp = 0;
   document.addEventListener('keydown', function (e) {
     _kp = e.key === _k[_kp] ? _kp + 1 : e.key === _k[0] ? 1 : 0;
-    if (_kp === _k.length) { _kp = 0; showEasterEgg(); }
+    if (_kp === _k.length) { _kp = 0; _su(); }
   });
 
   let _tc = 0, _tt = null;
   document.addEventListener('click', function (e) {
     if (!e.target.closest('.nav-brand')) { _tc = 0; return; }
     clearTimeout(_tt);
-    if (++_tc >= 7) { _tc = 0; showEasterEgg(); return; }
+    if (++_tc >= 7) { _tc = 0; _su(); return; }
     _tt = setTimeout(() => { _tc = 0; }, 2000);
   });
-  function showEasterEgg() {
-    if (document.getElementById('easterEggOverlay')) return;
+  function _su() {
+    if (document.getElementById('_so')) return;
     const overlay = document.createElement('div');
-    overlay.id = 'easterEggOverlay';
-    overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.92);display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;animation:eggFadeIn 0.4s ease';
+    overlay.id = '_so';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.92);display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;animation:_sf 0.4s ease';
     overlay.innerHTML = `
       <style>
-        @keyframes eggFadeIn { from { opacity:0; transform:scale(0.92); } to { opacity:1; transform:scale(1); } }
-        @keyframes eggSpin { 0% { transform:rotate(0deg) scale(1); } 50% { transform:rotate(180deg) scale(1.08); } 100% { transform:rotate(360deg) scale(1); } }
-        #easterEggLogo { animation: eggSpin 8s linear infinite; filter:brightness(0) drop-shadow(0 0 2px #fff) drop-shadow(0 0 2px #fff) drop-shadow(0 0 2px #fff) drop-shadow(0 0 28px rgba(74,158,255,0.7)); }
-        #easterEggOverlay h2 { color:#fff; font-size:1.6rem; font-weight:700; margin:28px 0 8px; letter-spacing:0.04em; }
-        #easterEggOverlay p { color:#64748b; font-size:0.9rem; margin:0; }
-        #easterEggCounter { color:#4a9eff; font-size:0.85rem; margin-top:10px; min-height:1.2em; transition:opacity 0.4s; }
-        #easterEggOverlay small { color:#334155; font-size:0.75rem; margin-top:28px; }
-        #eggCanvas { position:absolute; inset:0; pointer-events:none; }
+        @keyframes _sf { from { opacity:0; transform:scale(0.92); } to { opacity:1; transform:scale(1); } }
+        @keyframes _ss { 0% { transform:rotate(0deg) scale(1); } 50% { transform:rotate(180deg) scale(1.08); } 100% { transform:rotate(360deg) scale(1); } }
+        #_sl { animation: _ss 8s linear infinite; filter:brightness(0) drop-shadow(0 0 2px #fff) drop-shadow(0 0 2px #fff) drop-shadow(0 0 2px #fff) drop-shadow(0 0 28px rgba(74,158,255,0.7)); }
+        #_so h2 { color:#fff; font-size:1.6rem; font-weight:700; margin:28px 0 8px; letter-spacing:0.04em; }
+        #_so p { color:#64748b; font-size:0.9rem; margin:0; }
+        #_sc { color:#4a9eff; font-size:0.85rem; margin-top:10px; min-height:1.2em; transition:opacity 0.4s; }
+        #_so small { color:#334155; font-size:0.75rem; margin-top:28px; }
+        #_sv { position:absolute; inset:0; pointer-events:none; }
       </style>
-      <canvas id="eggCanvas"></canvas>
-      <img id="easterEggLogo" src="salishmesh-logo.svg" width="220" height="220" alt="Salish Mesh">
+      <canvas id="_sv"></canvas>
+      <img id="_sl" src="salishmesh-logo.svg" width="220" height="220" alt="Salish Mesh">
       <h2>Salish Mesh</h2>
       <p>You found the secret. Welcome to the mesh.</p>
-      <div id="easterEggCounter"></div>
+      <div id="_sc"></div>
       <small>click or press Esc to close</small>`;
     document.body.appendChild(overlay);
 
-    // Fetch discovery count from server
-    fetch('/api/easter', { method: 'POST' })
+    fetch('/api/v0/metrics/hit', { method: 'POST' })
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (!data) return;
-        const el = document.getElementById('easterEggCounter');
+        const el = document.getElementById('_sc');
         if (el) el.textContent = 'Discovery #' + data.count + ' — you\'re one of us now.';
       })
       .catch(() => {});
 
     // Burst confetti from the center of the screen
-    const canvas = document.getElementById('eggCanvas');
+    const canvas = document.getElementById('_sv');
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
     const ctx = canvas.getContext('2d');
