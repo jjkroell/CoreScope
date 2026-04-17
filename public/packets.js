@@ -1420,8 +1420,11 @@
       { key: 'details', label: 'Details' },
     ];
     const isNarrow = Layout.isMobile();
-    const defaultHidden = isNarrow ? ['region', 'hash', 'size', 'observer', 'rpt', 'path'] : [];
-    const COLS_VERSION = isNarrow ? 'mob4' : 'desk1';
+    const isTablet = !isNarrow && Layout.isTabletOrBelow();
+    const defaultHidden = isNarrow ? ['region', 'hash', 'size', 'observer', 'rpt', 'path']
+                        : isTablet ? ['path']
+                        : [];
+    const COLS_VERSION = isNarrow ? 'mob4' : isTablet ? 'tab1' : 'desk1';
     let visibleCols;
     try {
       if (localStorage.getItem('packets-cols-version') === COLS_VERSION) {
@@ -1828,7 +1831,14 @@
         const firstRow = topSpacer.nextElementSibling;
         if (firstRow && firstRow !== bottomSpacer) {
           const h = firstRow.offsetHeight;
-          if (h > 0) { VSCROLL_ROW_HEIGHT = h; _vscrollRowHeightMeasured = true; }
+          if (h > 0) {
+            VSCROLL_ROW_HEIGHT = h;
+            _vscrollRowHeightMeasured = true;
+            // Spacers were set above using the stale height — correct them now.
+            // startIdx/endIdx/offsets/totalDomRows are still in scope from this render call.
+            topSpacer.firstChild.style.height = (offsets[startIdx] * VSCROLL_ROW_HEIGHT) + 'px';
+            bottomSpacer.firstChild.style.height = ((totalDomRows - offsets[endIdx]) * VSCROLL_ROW_HEIGHT) + 'px';
+          }
         }
       }
       if (window.__PERF_LOG_RENDER) console.log('[perf] renderVisibleRows: full rebuild %d entries, %.2fms', endIdx - startIdx, performance.now() - _rvr_t0);
