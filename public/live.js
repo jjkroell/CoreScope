@@ -1357,7 +1357,7 @@
 
     // Close node detail when tapping the map background on mobile/tablet
     map.on('click', () => {
-      if (activeNodeDetailKey && window.innerWidth < 1024) closeNodeDetail();
+      if (activeNodeDetailKey && Layout.isTabletOrBelow()) closeNodeDetail();
     });
 
     // Save/restore map view
@@ -1525,7 +1525,7 @@
     const content = document.getElementById('nodeDetailContent');
     const backdrop = document.getElementById('nodeDetailBackdrop');
     panel.classList.remove('hidden');
-    if (backdrop && window.innerWidth < 1024) backdrop.classList.remove('hidden');
+    if (backdrop && Layout.isTabletOrBelow()) backdrop.classList.remove('hidden');
     content.innerHTML = '<div style="padding:20px;color:var(--text-muted)">Loading…</div>';
     try {
       const [data, healthData] = await Promise.all([

@@ -825,28 +825,23 @@
 
       // On orientation change, strip inline width on mobile (<640px) so CSS takes over,
       // or re-clamp the saved width on larger viewports.
-      var _chResizeTimer = null;
       function _chResetSidebar() {
-        clearTimeout(_chResizeTimer);
-        _chResizeTimer = setTimeout(function() {
-          if (window.innerWidth <= 640) {
-            sidebar.style.width = '';
+        if (Layout.isMobile()) {
+          sidebar.style.width = '';
+          sidebar.style.minWidth = '';
+        } else {
+          var sv = localStorage.getItem('channels-sidebar-width');
+          if (sv) {
+            var cw = Math.max(180, Math.min(window.innerWidth * 0.6, parseInt(sv, 10)));
+            sidebar.style.width = cw + 'px';
             sidebar.style.minWidth = '';
-          } else {
-            var sv = localStorage.getItem('channels-sidebar-width');
-            if (sv) {
-              var cw = Math.max(180, Math.min(window.innerWidth * 0.6, parseInt(sv, 10)));
-              sidebar.style.width = cw + 'px';
-              sidebar.style.minWidth = '';
-            }
           }
-        }, 150);
+        }
       }
-      window.addEventListener('resize', _chResetSidebar);
-      window.addEventListener('orientationchange', _chResetSidebar);
+      // Fire only when the mobile breakpoint crosses (not every pixel of resize)
+      Layout.onMobileChange(_chResetSidebar);
       handle._chCleanup = function() {
-        window.removeEventListener('resize', _chResetSidebar);
-        window.removeEventListener('orientationchange', _chResetSidebar);
+        Layout.offMobileChange(_chResetSidebar);
       };
     })();
 
@@ -1357,7 +1352,7 @@
     // On mobile: push a duplicate entry with the same URL so the back gesture only fires
     // popstate (not hashchange), letting us intercept it and show the channel list instead
     // of triggering the SPA router. Only push once — subsequent channel switches reuse it.
-    if (window.matchMedia('(max-width: 640px)').matches && !_mobileNavPushed) {
+    if (Layout.isMobile() && !_mobileNavPushed) {
       _mobileNavPushed = true;
       history.pushState({ _chMobileBack: true }, '', location.href);
     }

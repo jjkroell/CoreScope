@@ -1267,7 +1267,7 @@
     const body = document.getElementById('nodesDetailBody');
     const title = document.getElementById('nodesDetailTitle');
     overlay.style.display = 'flex';
-    if (window.matchMedia('(max-width: 640px)').matches && !_nodesMobileNavPushed) {
+    if (Layout.isMobile() && !_nodesMobileNavPushed) {
       _nodesMobileNavPushed = true;
       history.pushState({ _nodesMobileBack: true }, '', location.href);
     }

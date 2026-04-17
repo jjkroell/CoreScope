@@ -213,7 +213,7 @@
     const toggleBtn = document.getElementById('mapControlsToggle');
     const controlsPanel = document.getElementById('mapControls');
     // Default collapsed on mobile
-    if (window.innerWidth <= 640) {
+    if (Layout.isMobile()) {
       controlsCollapsed = true;
       controlsPanel.classList.add('collapsed');
       toggleBtn.setAttribute('aria-expanded', 'false');

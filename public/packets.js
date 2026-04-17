@@ -31,7 +31,7 @@
   let regionMap = {};
   const TYPE_NAMES = { 0:'Request', 1:'Response', 2:'Direct Msg', 3:'ACK', 4:'Advert', 5:'Channel Msg', 7:'Anon Req', 8:'Path', 9:'Trace', 11:'Control' };
   function typeName(t) { return TYPE_NAMES[t] ?? `Type ${t}`; }
-  const isMobile = window.innerWidth <= 1024;
+  const isMobile = Layout.isTabletOrBelow();
   const PACKET_LIMIT = isMobile ? 1000 : 50000;
   let savedTimeWindowMin = Number(localStorage.getItem('meshcore-time-window'));
   if (!Number.isFinite(savedTimeWindowMin) || savedTimeWindowMin <= 0) savedTimeWindowMin = 15;
@@ -198,31 +198,26 @@
 
     // On orientation change, clear inline width so CSS media queries can take over.
     // Without this, a JS-set pixel width overrides breakpoint rules (e.g., panel-right: 100% on mobile).
-    let _panelResizeTimer = null;
     function _resetPanelOnResize() {
-      clearTimeout(_panelResizeTimer);
-      _panelResizeTimer = setTimeout(function() {
-        // If we're below the mobile breakpoint, strip inline widths and let CSS handle it
-        if (window.innerWidth <= 640) {
-          panel.style.width = '';
+      // If we're below the mobile breakpoint, strip inline widths and let CSS handle it
+      if (Layout.isMobile()) {
+        panel.style.width = '';
+        panel.style.minWidth = '';
+      } else {
+        // Re-clamp saved width to current viewport
+        const saved = localStorage.getItem(PANEL_WIDTH_KEY);
+        if (saved) {
+          const clamped = Math.max(280, Math.min(window.innerWidth * 0.7, Number(saved)));
+          panel.style.width = clamped + 'px';
           panel.style.minWidth = '';
-        } else {
-          // Re-clamp saved width to current viewport
-          const saved = localStorage.getItem(PANEL_WIDTH_KEY);
-          if (saved) {
-            const clamped = Math.max(280, Math.min(window.innerWidth * 0.7, Number(saved)));
-            panel.style.width = clamped + 'px';
-            panel.style.minWidth = '';
-          }
         }
-      }, 150);
+      }
     }
-    window.addEventListener('resize', _resetPanelOnResize);
-    window.addEventListener('orientationchange', _resetPanelOnResize);
+    // Fire only when the mobile breakpoint crosses (not every pixel of resize)
+    Layout.onMobileChange(_resetPanelOnResize);
     // Store cleanup ref on the handle element so destroy() can remove it
     handle._cleanupResize = function() {
-      window.removeEventListener('resize', _resetPanelOnResize);
-      window.removeEventListener('orientationchange', _resetPanelOnResize);
+      Layout.offMobileChange(_resetPanelOnResize);
     };
 
     handle.addEventListener('touchstart', (e) => {
@@ -324,7 +319,7 @@
   let _pktPopstateHandler = null;
 
   function _pushPktMobileBack() {
-    if (window.matchMedia('(max-width: 640px)').matches && !_pktMobileNavPushed) {
+    if (Layout.isMobile() && !_pktMobileNavPushed) {
       _pktMobileNavPushed = true;
       history.pushState({ _pktMobileBack: true }, '', location.href);
     }
@@ -1424,7 +1419,7 @@
       { key: 'path', label: 'Path' },
       { key: 'details', label: 'Details' },
     ];
-    const isNarrow = window.innerWidth <= 640;
+    const isNarrow = Layout.isMobile();
     const defaultHidden = isNarrow ? ['region', 'hash', 'size', 'observer', 'rpt', 'path'] : [];
     const COLS_VERSION = isNarrow ? 'mob4' : 'desk1';
     let visibleCols;

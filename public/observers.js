@@ -19,7 +19,7 @@
   };
 
   function init(app) {
-    const isMobile = window.matchMedia('(max-width: 1023px)').matches;
+    const isMobile = Layout.isTabletOrBelow();
     app.innerHTML = `
       <div class="observers-page">
         <div class="page-header">

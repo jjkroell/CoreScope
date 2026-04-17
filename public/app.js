@@ -53,6 +53,25 @@ const ROUTE_TYPES = { 0: 'TRANSPORT_FLOOD', 1: 'FLOOD', 2: 'DIRECT', 3: 'TRANSPO
 const PAYLOAD_TYPES = { 0: 'Request', 1: 'Response', 2: 'Direct Msg', 3: 'ACK', 4: 'Advert', 5: 'Channel Msg', 6: 'Group Data', 7: 'Anon Req', 8: 'Path', 9: 'Trace', 10: 'Multipart', 11: 'Control', 15: 'Raw Custom' };
 const PAYLOAD_COLORS = { 0: 'req', 1: 'response', 2: 'txt-msg', 3: 'ack', 4: 'advert', 5: 'grp-txt', 7: 'anon-req', 8: 'path', 9: 'trace' };
 
+// Central layout breakpoints — mirrors the CSS @media breakpoints exactly.
+// Use Layout.isMobile() / isTablet() instead of window.innerWidth comparisons:
+//   - matchMedia evaluates the same engine as CSS (correct on orientation change)
+//   - .matches is never stale (iOS can return wrong innerWidth during transition)
+//   - onMobileChange / onTabletChange fire only when a breakpoint crosses, not every pixel
+const Layout = (function() {
+  const _mq640  = window.matchMedia('(max-width: 640px)');
+  const _mq1023 = window.matchMedia('(max-width: 1023px)');
+  return {
+    isMobile:        () => _mq640.matches,   // ≤640px
+    isTabletOrBelow: () => _mq1023.matches,  // ≤1023px (includes mobile)
+    isDesktop:       () => !_mq1023.matches, // ≥1024px
+    onMobileChange:  fn => _mq640.addEventListener('change', fn),
+    offMobileChange: fn => _mq640.removeEventListener('change', fn),
+    onTabletChange:  fn => _mq1023.addEventListener('change', fn),
+    offTabletChange: fn => _mq1023.removeEventListener('change', fn),
+  };
+})();
+
 function routeTypeName(n) { return ROUTE_TYPES[n] || 'UNKNOWN'; }
 function payloadTypeName(n) { return PAYLOAD_TYPES[n] || 'UNKNOWN'; }
 function payloadTypeColor(n) { return PAYLOAD_COLORS[n] || 'unknown'; }
@@ -752,7 +771,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const navLinks = document.querySelector('.nav-links');
   const navSheet = document.getElementById('navSheet');
   const navSheetBackdrop = document.getElementById('navSheetBackdrop');
-  function isBottomNavActive() { return window.innerWidth <= 1023; }
+  function isBottomNavActive() { return Layout.isTabletOrBelow(); }
   function toggleNav() {
     if (isBottomNavActive() && navSheet) {
       const opening = !navSheet.classList.contains('open');
