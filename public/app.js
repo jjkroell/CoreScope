@@ -1,27 +1,20 @@
 /* === CoreScope — app.js === */
 'use strict';
 
-// --- Easter egg: Konami code + 7x logo tap ---
 (function () {
-  const SEQ = ['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight','ArrowLeft','ArrowRight','b','a'];
-  let pos = 0;
+  const _k = 'ArrowUp ArrowUp ArrowDown ArrowDown ArrowLeft ArrowRight ArrowLeft ArrowRight b a'.split(' ');
+  let _kp = 0;
   document.addEventListener('keydown', function (e) {
-    if (e.key === SEQ[pos]) {
-      pos++;
-      if (pos === SEQ.length) { pos = 0; showEasterEgg(); }
-    } else {
-      pos = e.key === SEQ[0] ? 1 : 0;
-    }
+    _kp = e.key === _k[_kp] ? _kp + 1 : e.key === _k[0] ? 1 : 0;
+    if (_kp === _k.length) { _kp = 0; showEasterEgg(); }
   });
 
-  // 7 taps on the nav logo
-  let tapCount = 0, tapTimer = null;
+  let _tc = 0, _tt = null;
   document.addEventListener('click', function (e) {
-    if (!e.target.closest('.nav-brand')) { tapCount = 0; return; }
-    tapCount++;
-    clearTimeout(tapTimer);
-    if (tapCount >= 7) { tapCount = 0; showEasterEgg(); return; }
-    tapTimer = setTimeout(() => { tapCount = 0; }, 2000);
+    if (!e.target.closest('.nav-brand')) { _tc = 0; return; }
+    clearTimeout(_tt);
+    if (++_tc >= 7) { _tc = 0; showEasterEgg(); return; }
+    _tt = setTimeout(() => { _tc = 0; }, 2000);
   });
   function showEasterEgg() {
     if (document.getElementById('easterEggOverlay')) return;
@@ -62,18 +55,18 @@
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
     const ctx = canvas.getContext('2d');
-    const COLORS = ['#4a9eff','#22c55e','#f59e0b','#a78bfa','#f472b6','#94a3b8','#fff'];
-    const particles = Array.from({ length: 72 }, () => {
+    const COLORS = ['#4a9eff','#22c55e','#f59e0b','#a78bfa','#f472b6','#fb923c','#fff','#e11d48'];
+    const particles = Array.from({ length: 160 }, () => {
       const angle = Math.random() * Math.PI * 2;
-      const speed = 3 + Math.random() * 6;
+      const speed = 8 + Math.random() * 14;
       return {
         x: canvas.width / 2, y: canvas.height / 2,
-        vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed - 2,
-        r: 3 + Math.random() * 4,
+        vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed - 4,
+        r: 6 + Math.random() * 8,
         color: COLORS[Math.floor(Math.random() * COLORS.length)],
-        alpha: 1, decay: 0.012 + Math.random() * 0.01,
-        shape: Math.random() > 0.5 ? 'circle' : 'rect',
-        rot: Math.random() * Math.PI * 2, spin: (Math.random() - 0.5) * 0.2,
+        alpha: 1, decay: 0.007 + Math.random() * 0.006,
+        shape: Math.random() > 0.4 ? 'rect' : 'circle',
+        rot: Math.random() * Math.PI * 2, spin: (Math.random() - 0.5) * 0.18,
       };
     });
     let rafId;
@@ -83,7 +76,8 @@
       for (const p of particles) {
         if (p.alpha <= 0) continue;
         alive++;
-        p.x += p.vx; p.y += p.vy; p.vy += 0.12; // gravity
+        p.x += p.vx; p.y += p.vy; p.vy += 0.18; // gravity
+        p.vx *= 0.99; // slight air drag
         p.alpha -= p.decay; p.rot += p.spin;
         ctx.save();
         ctx.globalAlpha = Math.max(0, p.alpha);
@@ -92,7 +86,7 @@
         if (p.shape === 'circle') {
           ctx.beginPath(); ctx.arc(0, 0, p.r, 0, Math.PI * 2); ctx.fill();
         } else {
-          ctx.fillRect(-p.r, -p.r * 0.6, p.r * 2, p.r * 1.2);
+          ctx.fillRect(-p.r, -p.r * 0.5, p.r * 2, p.r);
         }
         ctx.restore();
       }
