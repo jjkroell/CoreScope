@@ -177,6 +177,7 @@ func (s *Server) RegisterRoutes(r *mux.Router) {
 	// Other endpoints
 	r.HandleFunc("/api/resolve-hops", s.handleResolveHops).Methods("GET")
 	r.HandleFunc("/api/channels/add", s.handleAddChannel).Methods("POST")
+	r.HandleFunc("/api/channels/private/{hashHex}/packets", s.handlePrivateChannelPackets).Methods("GET")
 	r.HandleFunc("/api/channels/{hash}/messages", s.handleChannelMessages).Methods("GET")
 	r.HandleFunc("/api/channels", s.handleChannels).Methods("GET")
 	r.HandleFunc("/api/observers/metrics/summary", s.handleMetricsSummary).Methods("GET")
@@ -1787,6 +1788,21 @@ func (s *Server) handleChannelMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, ChannelMessagesResponse{Messages: messages, Total: total})
+}
+
+func (s *Server) handlePrivateChannelPackets(w http.ResponseWriter, r *http.Request) {
+	hashHex := mux.Vars(r)["hashHex"]
+	limit := queryInt(r, "limit", 500)
+	if limit > 2000 {
+		limit = 2000
+	}
+	if s.store != nil {
+		packets, total := s.store.GetRawPrivateChannelPackets(hashHex, limit)
+		writeJSON(w, map[string]interface{}{"packets": packets, "total": total})
+		return
+	}
+	// Private channels are client-side only — no DB fallback needed
+	writeJSON(w, map[string]interface{}{"packets": []interface{}{}, "total": 0})
 }
 
 func (s *Server) handleObservers(w http.ResponseWriter, r *http.Request) {

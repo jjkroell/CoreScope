@@ -1395,25 +1395,17 @@
     const pk = getPrivateKeyForHash(ch.hashByte);
     if (!pk) { msgEl.innerHTML = '<div class="ch-empty">Private key not found — try removing and re-adding this channel</div>'; return; }
     try {
-      // Fetch newest 200 GRP_TXT packets (DESC), then reverse for chronological display
-      const data = await api('/packets?type=5&limit=200', { ttl: 10000 });
+      // Fetch packets filtered server-side by channelHashHex — avoids burning the limit
+      // on other channels' traffic. Returns up to 500 packets in chronological order.
+      const hashHex = ch.hashByte.toString(16).padStart(2, '0').toUpperCase();
+      const data = await api(`/channels/private/${hashHex}/packets?limit=500`, { ttl: 10000 });
       if (isStaleMessageRequest(request)) return;
-      const pkts = (data.packets || data.Packets || []).slice().reverse();
+      const pkts = data.packets || [];
       const decrypted = [];
       for (const pkt of pkts) {
         let decoded = pkt.decoded_json;
         if (typeof decoded === 'string') { try { decoded = JSON.parse(decoded); } catch (_) { continue; } }
         if (!decoded) continue;
-        // channelHash int is omitted when 0 in old packets — use channelHashHex ("00".."FF") as primary.
-        let channelHash;
-        if (decoded.channelHashHex !== undefined) {
-          channelHash = parseInt(decoded.channelHashHex, 16);
-        } else if (decoded.channelHash !== undefined) {
-          channelHash = decoded.channelHash;
-        } else {
-          continue; // no hash info — skip
-        }
-        if (channelHash !== ch.hashByte) continue;
         const mac = decoded.mac ?? decoded.payload?.mac;
         const encryptedData = decoded.encryptedData ?? decoded.payload?.encryptedData;
         if (!encryptedData || !mac) continue;
@@ -1422,7 +1414,6 @@
         const plain = await aesEcbDecrypt(pk.keyHex, encryptedData);
         const parsed = parsePlaintext(plain);
         if (!parsed || !parsed.text) continue;
-        // Parse "sender: message" format
         let sender = 'Unknown', text = parsed.text;
         const ci = text.indexOf(': ');
         if (ci > 0 && ci < 50) { sender = text.slice(0, ci); text = text.slice(ci + 2); }

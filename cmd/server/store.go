@@ -3099,6 +3099,70 @@ func (s *PacketStore) GetChannelMessages(channelHash string, limit, offset int, 
 	return messages, total
 }
 
+// GetRawPrivateChannelPackets returns unformatted GRP_TXT packets for a specific channel
+// hash byte (hex), intended for client-side decryption. Returns the newest `limit` packets
+// in chronological order (oldest first).
+func (s *PacketStore) GetRawPrivateChannelPackets(channelHashHex string, limit int) ([]map[string]interface{}, int) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if limit <= 0 {
+		limit = 500
+	}
+
+	hashHexNorm := strings.ToUpper(strings.TrimSpace(channelHashHex))
+
+	type decodedCheck struct {
+		ChannelHashHex string `json:"channelHashHex"`
+	}
+
+	var matched []*StoreTx
+	for _, tx := range s.byPayloadType[5] {
+		if tx.DecodedJSON == "" {
+			continue
+		}
+		var check decodedCheck
+		if json.Unmarshal([]byte(tx.DecodedJSON), &check) != nil {
+			continue
+		}
+		if strings.ToUpper(strings.TrimSpace(check.ChannelHashHex)) != hashHexNorm {
+			continue
+		}
+		matched = append(matched, tx)
+	}
+
+	total := len(matched)
+	start := total - limit
+	if start < 0 {
+		start = 0
+	}
+
+	result := make([]map[string]interface{}, 0, total-start)
+	for _, tx := range matched[start:] {
+		var decodedObj interface{}
+		_ = json.Unmarshal([]byte(tx.DecodedJSON), &decodedObj)
+
+		obsName := tx.ObserverName
+		if obsName == "" {
+			obsName = tx.ObserverID
+		}
+
+		var snrVal interface{}
+		if tx.SNR != nil {
+			snrVal = *tx.SNR
+		}
+
+		result = append(result, map[string]interface{}{
+			"hash":          strOrNil(tx.Hash),
+			"timestamp":     strOrNil(tx.FirstSeen),
+			"decoded_json":  decodedObj,
+			"observer_name": obsName,
+			"snr":           snrVal,
+		})
+	}
+	return result, total
+}
+
 // GetAnalyticsChannels returns full channel analytics computed from in-memory packets.
 func (s *PacketStore) GetAnalyticsChannels(region string) map[string]interface{} {
 	s.cacheMu.Lock()
