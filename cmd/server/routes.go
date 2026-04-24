@@ -180,6 +180,7 @@ func (s *Server) RegisterRoutes(r *mux.Router) {
 	r.HandleFunc("/api/channels/private/{hashHex}/packets", s.handlePrivateChannelPackets).Methods("GET")
 	r.HandleFunc("/api/channels/{hash}/messages", s.handleChannelMessages).Methods("GET")
 	r.HandleFunc("/api/channels", s.handleChannels).Methods("GET")
+	r.HandleFunc("/api/observers/top-monthly", s.handleObserverTopMonthly).Methods("GET")
 	r.HandleFunc("/api/observers/metrics/summary", s.handleMetricsSummary).Methods("GET")
 	r.HandleFunc("/api/observers/{id}/metrics", s.handleObserverMetrics).Methods("GET")
 	r.HandleFunc("/api/observers/{id}/analytics", s.handleObserverAnalytics).Methods("GET")
@@ -1852,6 +1853,22 @@ func (s *Server) handleObservers(w http.ResponseWriter, r *http.Request) {
 		Observers:  result,
 		ServerTime: time.Now().UTC().Format(time.RFC3339),
 	})
+}
+
+func (s *Server) handleObserverTopMonthly(w http.ResponseWriter, r *http.Request) {
+	n := queryInt(r, "n", 5)
+	if n < 1 || n > 20 {
+		n = 5
+	}
+	entries, err := s.db.GetObserverMonthlyTop(n)
+	if err != nil {
+		internalError(w, r.URL.Path, err)
+		return
+	}
+	if entries == nil {
+		entries = []MonthlyObserverEntry{}
+	}
+	writeJSON(w, map[string]interface{}{"topMonthly": entries})
 }
 
 func (s *Server) handleObserverDetail(w http.ResponseWriter, r *http.Request) {

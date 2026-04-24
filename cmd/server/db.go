@@ -1478,6 +1478,105 @@ func (db *DB) GetObserverPacketCounts(sinceEpoch int64) map[string]int {
 	return counts
 }
 
+// MonthlyObserverEntry holds one observer's packet count for a given month.
+type MonthlyObserverEntry struct {
+	Month       string `json:"month"` // "2026-01"
+	ObserverID  string `json:"id"`
+	Name        string `json:"name"`
+	PacketCount int    `json:"packet_count"`
+	Rank        int    `json:"rank"`
+}
+
+// GetObserverMonthlyTop returns the top N observers for the last completed calendar month.
+// If no completed month exists yet (e.g. the system was set up this month), it falls back
+// to the current month so something is always shown.
+func (db *DB) GetObserverMonthlyTop(n int) ([]MonthlyObserverEntry, error) {
+	var rows *sql.Rows
+	var err error
+
+	// targetMonth: last completed month if data exists there, otherwise most recent month.
+	var targetMonth string
+	if db.isV3 {
+		db.conn.QueryRow(`
+			SELECT COALESCE(
+				(SELECT MAX(strftime('%Y-%m', datetime(timestamp, 'unixepoch')))
+				 FROM observations
+				 WHERE strftime('%Y-%m', datetime(timestamp, 'unixepoch')) < strftime('%Y-%m', 'now')),
+				(SELECT MAX(strftime('%Y-%m', datetime(timestamp, 'unixepoch')))
+				 FROM observations)
+			)`).Scan(&targetMonth)
+	} else {
+		db.conn.QueryRow(`
+			SELECT COALESCE(
+				(SELECT MAX(strftime('%Y-%m', datetime(timestamp, 'unixepoch')))
+				 FROM observations
+				 WHERE observer_id IS NOT NULL
+				 AND strftime('%Y-%m', datetime(timestamp, 'unixepoch')) < strftime('%Y-%m', 'now')),
+				(SELECT MAX(strftime('%Y-%m', datetime(timestamp, 'unixepoch')))
+				 FROM observations WHERE observer_id IS NOT NULL)
+			)`).Scan(&targetMonth)
+	}
+	if targetMonth == "" {
+		return nil, nil
+	}
+
+	query := `
+		SELECT month, id, name, cnt FROM (
+			SELECT
+				strftime('%Y-%m', datetime(o.timestamp, 'unixepoch')) AS month,
+				obs.id AS id,
+				COALESCE(obs.name, obs.id) AS name,
+				COUNT(*) AS cnt,
+				RANK() OVER (PARTITION BY strftime('%Y-%m', datetime(o.timestamp, 'unixepoch')) ORDER BY COUNT(*) DESC) AS rnk
+			FROM observations o
+			JOIN observers obs ON obs.rowid = o.observer_idx
+			WHERE o.timestamp IS NOT NULL
+			AND strftime('%Y-%m', datetime(o.timestamp, 'unixepoch')) = ?
+			GROUP BY month, obs.id
+		) ranked
+		WHERE rnk <= ?
+		ORDER BY cnt DESC`
+	queryV2 := `
+		SELECT month, id, name, cnt FROM (
+			SELECT
+				strftime('%Y-%m', datetime(o.timestamp, 'unixepoch')) AS month,
+				obs.id AS id,
+				COALESCE(obs.name, obs.id) AS name,
+				COUNT(*) AS cnt,
+				RANK() OVER (PARTITION BY strftime('%Y-%m', datetime(o.timestamp, 'unixepoch')) ORDER BY COUNT(*) DESC) AS rnk
+			FROM observations o
+			JOIN observers obs ON obs.id = o.observer_id
+			WHERE o.observer_id IS NOT NULL AND o.timestamp IS NOT NULL
+			AND strftime('%Y-%m', datetime(o.timestamp, 'unixepoch')) = ?
+			GROUP BY month, obs.id
+		) ranked
+		WHERE rnk <= ?
+		ORDER BY cnt DESC`
+
+	if db.isV3 {
+		rows, err = db.conn.Query(query, targetMonth, n)
+	} else {
+		rows, err = db.conn.Query(queryV2, targetMonth, n)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []MonthlyObserverEntry
+	rankByMonth := make(map[string]int)
+	for rows.Next() {
+		var e MonthlyObserverEntry
+		if err := rows.Scan(&e.Month, &e.ObserverID, &e.Name, &e.PacketCount); err != nil {
+			continue
+		}
+		rankByMonth[e.Month]++
+		e.Rank = rankByMonth[e.Month]
+		result = append(result, e)
+	}
+	return result, nil
+}
+
 // GetNodeLocations returns a map of lowercase public_key → {lat, lon, role} for node geo lookups.
 func (db *DB) GetNodeLocations() map[string]map[string]interface{} {
 	result := make(map[string]map[string]interface{})

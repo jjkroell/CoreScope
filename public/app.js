@@ -721,14 +721,25 @@ window.addEventListener('DOMContentLoaded', () => {
     tip.id = 'uiTooltip';
     document.body.appendChild(tip);
     let hideTimer;
+    let tipPos = 'top';
     function pos(e) {
       const tw = tip.offsetWidth, th = tip.offsetHeight;
       const vw = window.innerWidth;
-      let x = e.clientX - tw / 2;
-      let y = e.clientY - th - 10;
-      if (x < 6) x = 6;
-      if (x + tw > vw - 6) x = vw - tw - 6;
-      if (y < 6) y = e.clientY + 22;
+      const vh = window.innerHeight;
+      let x, y;
+      if (tipPos === 'left') {
+        x = e.clientX - tw - 12;
+        y = e.clientY - th / 2;
+        if (x < 6) x = e.clientX + 12;
+        if (y < 6) y = 6;
+        if (y + th > vh - 6) y = vh - th - 6;
+      } else {
+        x = e.clientX - tw / 2;
+        y = e.clientY - th - 10;
+        if (x < 6) x = 6;
+        if (x + tw > vw - 6) x = vw - tw - 6;
+        if (y < 6) y = e.clientY + 22;
+      }
       tip.style.left = x + 'px';
       tip.style.top  = y + 'px';
     }
@@ -737,6 +748,7 @@ window.addEventListener('DOMContentLoaded', () => {
       if (!t) return;
       clearTimeout(hideTimer);
       tip.textContent = t.dataset.tooltip;
+      tipPos = t.dataset.tooltipPos || 'top';
       tip.style.opacity = '1';
       pos(e);
     });

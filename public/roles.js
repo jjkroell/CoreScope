@@ -15,9 +15,9 @@
   };
 
   window.TYPE_COLORS = {
-    ADVERT: '#22c55e', GRP_TXT: '#3b82f6', TXT_MSG: '#f59e0b', ACK: '#6b7280',
+    ADVERT: '#4a9966', GRP_TXT: '#3b82f6', TXT_MSG: '#b07a20', ACK: '#6b7280',
     REQUEST: '#a855f7', RESPONSE: '#06b6d4', TRACE: '#ec4899', PATH: '#14b8a6',
-    ANON_REQ: '#f43f5e', UNKNOWN: '#6b7280'
+    ANON_REQ: '#b05468', UNKNOWN: '#6b7280'
   };
 
   // Badge CSS class name mapping
@@ -36,7 +36,7 @@
       var color = window.TYPE_COLORS[type];
       if (!color) continue;
       var cls = TYPE_BADGE_MAP[type];
-      css += '.badge-' + cls + ' { background: ' + color + '20; color: ' + color + '; }\n';
+      css += '.badge-' + cls + ' { background: transparent; color: ' + color + '; border: 1px solid ' + color + '50; border-radius: 4px; }\n';
     }
     el.textContent = css;
   };

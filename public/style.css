@@ -1277,6 +1277,28 @@ fieldset.mc-section legend.mc-label { padding: 0; }
 .obs-sort-active { color: var(--accent); }
 .col-observer { min-width: 70px; max-width: none; }
 
+/* === Top Monthly Observers === */
+.obs-top-section {
+  background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px;
+  padding: 16px 20px; margin-bottom: 20px;
+}
+.obs-top-title {
+  font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px;
+  color: var(--text-muted); margin-bottom: 14px;
+}
+.obs-top-row {
+  display: flex; align-items: center; gap: 8px; padding: 4px 0;
+  font-size: 13px;
+}
+.obs-top-rank { flex-shrink: 0; font-size: 14px; width: 22px; }
+.obs-top-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.obs-top-bar-wrap {
+  width: 60px; height: 6px; background: var(--border); border-radius: 3px;
+  flex-shrink: 0; overflow: hidden;
+}
+.obs-top-bar { height: 100%; background: var(--accent); border-radius: 3px; }
+.obs-top-count { font-size: 11px; color: var(--text-muted); flex-shrink: 0; text-align: right; min-width: 44px; font-family: var(--mono); }
+
 /* === Time range select === */
 .time-range-select {
   appearance: none; -webkit-appearance: none;
@@ -1383,8 +1405,8 @@ fieldset.mc-section legend.mc-label { padding: 0; }
 .data-table tbody tr { border-left: 3px solid transparent; transition: border-color 0.15s, background 0.15s; }
 .data-table tbody tr:hover { border-left-color: var(--accent); }
 
-.badge { transition: transform 0.15s ease; }
-.badge:hover { transform: scale(1.05); }
+.badge { transition: none; }
+.badge:hover { transform: none; }
 
 @keyframes slideInRight { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 .panel-right:not(.empty) { animation: slideInRight 200ms ease-out; }
@@ -2397,8 +2419,8 @@ tr[data-hops]:hover { background: rgba(59,130,246,0.1); }
 .multi-select-item:hover { background: var(--row-hover, #f5f5f5); }
 
 .chan-tag {
-  background: var(--nav-bg); color: var(--nav-text);
-  border: 1px solid var(--border);
+  background: transparent; color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
   padding: 1px 5px; border-radius: 4px; font-size: 0.85em; font-weight: 600;
 }
 

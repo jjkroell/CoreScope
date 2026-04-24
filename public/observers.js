@@ -13,7 +13,6 @@
     status:  o => { const c = healthStatus(o.last_seen).cls; return c === 'health-green' ? 0 : c === 'health-yellow' ? 1 : 2; },
     name:    o => (o.name || o.id || '').toLowerCase(),
     region:  o => (o.iata || '').toLowerCase(),
-    packets: o => o.packet_count || 0,
     rate:    o => o.packetsLastHour || 0,
     uptime:  o => o.first_seen ? new Date(o.first_seen).getTime() : Infinity,
   };
@@ -32,11 +31,13 @@
             Refresh
           </button>` : ''}
         </div>
+        <div id="obsTopMonthly"></div>
         <div id="obsContent"><div class="text-center text-muted" style="padding:40px">Loading…</div></div>
       </div>`;
     RegionFilter.init(document.getElementById('obsRegionFilter'));
     regionChangeHandler = RegionFilter.onChange(function () { render(); });
     loadObservers();
+    loadTopMonthly();
     // Event delegation for data-action buttons
     app.addEventListener('click', function (e) {
       var btn = e.target.closest('[data-action]');
@@ -69,6 +70,45 @@
     if (regionChangeHandler) RegionFilter.offChange(regionChangeHandler);
     regionChangeHandler = null;
     observers = [];
+  }
+
+  async function loadTopMonthly() {
+    const el = document.getElementById('obsTopMonthly');
+    if (!el) return;
+    try {
+      // Completed month data is static — cache for 1 hour
+      const data = await api('/observers/top-monthly?n=5', { ttl: 3600000 });
+      const entries = data.topMonthly || [];
+      if (!entries.length) { el.innerHTML = ''; return; }
+
+      // All entries are for the same (last completed) month
+      const month = entries[0].month;
+      const [y, mo] = month.split('-');
+      const monthLabel = new Date(+y, +mo - 1, 1).toLocaleString('default', { month: 'long', year: 'numeric' });
+
+      const medals = ['🥇', '🥈', '🥉'];
+      const maxPkts = entries[0].packet_count || 1;
+
+      const rowsHtml = entries.map((e, i) => {
+        const pct = Math.round((e.packet_count / maxPkts) * 100);
+        const medal = medals[i] || `<span style="display:inline-block;width:18px;text-align:center;font-size:11px;color:var(--text-muted)">${e.rank}</span>`;
+        return `<div class="obs-top-row">
+          <span class="obs-top-rank">${medal}</span>
+          <span class="obs-top-name">${escapeHtml(e.name || e.id)}</span>
+          <div class="obs-top-bar-wrap">
+            <div class="obs-top-bar" style="width:${pct}%"></div>
+          </div>
+          <span class="obs-top-count" data-tooltip="Packets stored for ${monthLabel} after duplicates removed. The table's Total Raw Pkts column counts everything received, including duplicates." data-tooltip-pos="left">${e.packet_count.toLocaleString()}</span>
+        </div>`;
+      }).join('');
+
+      el.innerHTML = `<div class="obs-top-section">
+        <div class="obs-top-title">Top 5 Observers — <span style="color:var(--accent)">${monthLabel}</span></div>
+        ${rowsHtml}
+      </div>`;
+    } catch (e) {
+      el.innerHTML = '';
+    }
   }
 
   async function loadObservers() {
@@ -150,7 +190,7 @@
       const maxPkts = Math.max(1, ...rows.map(o => o.packetsLastHour || 0));
       return rows.map(o => {
         const h = healthStatus(o.last_seen);
-        return `<tr style="cursor:pointer" tabindex="0" role="row" data-action="navigate" data-value="#/observers/${encodeURIComponent(o.id)}">
+        return `<tr style="cursor:pointer" tabindex="0" role="row" data-action="navigate" data-value="#/observers/${encodeURIComponent(o.id)}" data-obs-id="${encodeURIComponent(o.id)}">
           <td><span class="health-dot ${h.cls}" data-tooltip="${h.label}"></span> ${h.label}</td>
           <td class="mono">${o.name || o.id}</td>
           <td>${o.iata || '—'}</td>
@@ -160,6 +200,42 @@
           <td>${uptimeStr(o.first_seen)}</td>
         </tr>`;
       }).join('');
+    }
+
+    // If the table already exists, patch cells in-place to preserve hover state
+    const existingTable = el.querySelector('#obsTable');
+    if (existingTable) {
+      const summaryEl = el.querySelector('.obs-summary');
+      if (summaryEl) {
+        summaryEl.innerHTML = `
+          <span class="obs-stat"><span class="health-dot health-green"></span> ${online} Online</span>
+          <span class="obs-stat"><span class="health-dot health-yellow"></span> ${stale} Stale</span>
+          <span class="obs-stat"><span class="health-dot health-red"></span> ${offline} Offline</span>
+          <span class="obs-stat">📡 ${filtered.length} Total</span>`;
+      }
+      const tbody = existingTable.querySelector('tbody');
+      const rows = sortedRows();
+      const maxPkts = Math.max(1, ...rows.map(o => o.packetsLastHour || 0));
+      const existingIds = new Set(Array.from(tbody.querySelectorAll('tr[data-obs-id]')).map(r => r.dataset.obsId));
+      const newIds = new Set(rows.map(o => encodeURIComponent(o.id)));
+      // If observer list changed (added/removed), do a full tbody replace
+      const setsMatch = existingIds.size === newIds.size && [...newIds].every(id => existingIds.has(id));
+      if (!setsMatch) {
+        tbody.innerHTML = renderRows();
+        return;
+      }
+      // Patch only the changing cells (status, last seen, packets, rate) — leave row nodes intact
+      for (const o of rows) {
+        const row = tbody.querySelector(`tr[data-obs-id="${encodeURIComponent(o.id)}"]`);
+        if (!row) continue;
+        const cells = row.cells;
+        const h = healthStatus(o.last_seen);
+        cells[0].innerHTML = `<span class="health-dot ${h.cls}" data-tooltip="${h.label}"></span> ${h.label}`;
+        cells[3].textContent = timeAgo(o.last_seen);
+        cells[4].textContent = (o.packet_count || 0).toLocaleString();
+        cells[5].innerHTML = sparkBar(o.packetsLastHour || 0, maxPkts);
+      }
+      return;
     }
 
     el.innerHTML = `
@@ -174,7 +250,7 @@
         <thead><tr>
           ${thHtml('Status','status')}${thHtml('Name','name')}${thHtml('Region','region')}
           <th scope="col">Last Seen</th>
-          ${thHtml('Packets','packets')}${thHtml('Packets/Hour','rate')}${thHtml('Uptime','uptime')}
+          <th scope="col">Total Raw Pkts</th>${thHtml('Pkts/Hour','rate')}${thHtml('Uptime','uptime')}
         </tr></thead>
         <tbody>${renderRows()}</tbody>
       </table></div>`;
@@ -190,7 +266,7 @@
         table.querySelector('thead tr').innerHTML = `
           ${thHtml('Status','status')}${thHtml('Name','name')}${thHtml('Region','region')}
           <th scope="col">Last Seen</th>
-          ${thHtml('Packets','packets')}${thHtml('Packets/Hour','rate')}${thHtml('Uptime','uptime')}`;
+          <th scope="col">Total Raw Pkts</th>${thHtml('Pkts/Hour','rate')}${thHtml('Uptime','uptime')}`;
         table.querySelector('tbody').innerHTML = renderRows();
       });
     });
