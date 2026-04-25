@@ -358,7 +358,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
   width: 100%; border-collapse: collapse; font-size: 12px;
 }
 .data-table th {
-  text-align: left; padding: 4px 2px; font-weight: 600; font-size: 11px;
+  text-align: left; padding: 6px 8px; font-weight: 600; font-size: 11px;
   text-transform: uppercase; letter-spacing: .3px; color: var(--text-muted);
   border-bottom: 2px solid var(--border); background: var(--card-bg);
   position: sticky; top: 0; z-index: 1;
@@ -366,7 +366,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .data-table th.sortable { cursor: pointer; }
 .data-table th.sortable:hover { color: var(--accent); }
 .data-table td {
-  padding: 3px 2px; border-bottom: 1px solid var(--border);
+  padding: 5px 8px; border-bottom: 1px solid var(--border);
   vertical-align: middle; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis;
   max-width: 0; /* forces td to respect table width instead of expanding to content */
@@ -374,8 +374,11 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 /* Packets table: fixed layout makes column widths from colgroup respected,
    which enables overflow:hidden + text-overflow:ellipsis on td cells */
 #pktTable { table-layout: fixed; }
-#pktTable th, #pktTable td { text-align: center; }
+#pktTable.pkt-compact th { padding: 4px 8px; }
+#pktTable.pkt-compact td { padding: 2px 8px; font-size: 11px; }
+#pktTable th, #pktTable td { text-align: left; }
 #pktTable th { overflow: hidden; text-overflow: ellipsis; }
+#pktTable .col-size, #pktTable .col-type, #pktTable .col-rpt { text-align: center; }
 .data-table td.col-details { white-space: normal; word-break: break-word; }
 .data-table td:has(.spark-bar), .data-table td.col-spark { max-width: none; overflow: visible; min-width: 80px; }
 .data-table .col-time { white-space: nowrap; }
@@ -395,7 +398,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
   transition: background 0.15s; line-height: 1.4;
 }
 .pkt-byop-pill:hover { background: color-mix(in srgb, var(--accent) 20%, transparent); }
-.pkt-pause-btn.paused { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); border-color: var(--accent); }
+.pkt-pause-btn.paused, .pkt-density-btn[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); border-color: var(--accent); }
 .pkt-pause-btn.paused:hover { background: color-mix(in srgb, var(--accent) 20%, transparent); }
 .pkt-pause-play { color: var(--status-yellow); }
 /* Active filter count badge on the Filters pill */
@@ -941,6 +944,11 @@ fieldset.mc-section legend.mc-label { padding: 0; }
   color: var(--text-muted); margin-bottom: 4px;
 }
 .ch-activity-svg { display: block; border-radius: 2px; }
+.ch-activity-axis {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-top: 3px; font-size: 9px; color: var(--text-muted); font-weight: 500;
+}
+.ch-activity-summary { color: var(--text-muted); font-weight: 600; }
 .ch-messages {
   flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 16px;
   background: var(--content-bg);
@@ -1264,12 +1272,26 @@ fieldset.mc-section legend.mc-label { padding: 0; }
   transition: color .15s, border-color .15s, background .15s;
 }
 .obs-refresh-btn:hover { color: var(--text); border-color: var(--accent); background: var(--surface-2); }
-.obs-summary { display: flex; gap: 20px; margin-bottom: 16px; flex-wrap: wrap; }
+.obs-card {
+  background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px;
+  overflow: clip; margin-bottom: 20px;
+}
+.obs-card .obs-summary { border-bottom: 1px solid var(--border); padding: 12px 16px; margin-bottom: 0; }
+.obs-card .obs-table-scroll { border-radius: 0; }
+.obs-summary { display: flex; gap: 20px; flex-wrap: wrap; }
 .obs-stat { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--text-muted); }
 .health-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0; font-size: 0; }
 .health-dot.health-green { background: var(--status-green); box-shadow: 0 0 6px #22c55e80; }
 .health-dot.health-yellow { background: var(--status-yellow); box-shadow: 0 0 6px #eab30880; }
 .health-dot.health-red { background: var(--status-red); box-shadow: 0 0 6px #ef444480; }
+.obs-table { table-layout: fixed; width: 100%; }
+.obs-table col.obs-col-status  { width: 100px; }
+.obs-table col.obs-col-name    { width: auto; }
+.obs-table col.obs-col-region  { width: 72px; }
+.obs-table col.obs-col-lastseen { width: 100px; }
+.obs-table col.obs-col-rawpkts { width: 115px; }
+.obs-table col.obs-col-rate    { width: 130px; }
+.obs-table col.obs-col-uptime  { width: 80px; }
 .obs-table td:first-child { white-space: nowrap; }
 .obs-table td:nth-child(6) { max-width: none; overflow: visible; }
 .obs-sortable { user-select: none; white-space: nowrap; }
@@ -1298,6 +1320,27 @@ fieldset.mc-section legend.mc-label { padding: 0; }
 }
 .obs-top-bar { height: 100%; background: var(--accent); border-radius: 3px; }
 .obs-top-count { font-size: 11px; color: var(--text-muted); flex-shrink: 0; text-align: right; min-width: 44px; font-family: var(--mono); }
+
+/* === Observers — responsive === */
+@media (max-width: 768px) {
+  .observers-page { padding: 14px 16px; }
+  .obs-toolbar { flex-wrap: wrap; }
+  .obs-toolbar .region-filter-bar { flex-wrap: wrap; }
+  .obs-top-row { gap: 6px; }
+  .obs-top-bar-wrap { width: 44px; }
+}
+@media (max-width: 640px) {
+  .observers-page { padding: 10px 12px; }
+  .obs-top-section { padding: 12px 14px; margin-bottom: 14px; }
+  .obs-top-title { font-size: 11px; margin-bottom: 10px; }
+  .obs-top-row { font-size: 12px; gap: 5px; padding: 3px 0; }
+  .obs-top-bar-wrap { width: 32px; height: 5px; }
+  .obs-top-count { font-size: 11px; min-width: 36px; }
+  /* Observer toolbar: wrap region pills onto next line */
+  .obs-toolbar { flex-direction: column; align-items: stretch; gap: 8px; }
+  .obs-toolbar .region-filter-container { flex: none; }
+  .obs-refresh-btn { align-self: flex-start; }
+}
 
 /* === Time range select === */
 .time-range-select {
@@ -1626,6 +1669,7 @@ fieldset.mc-section legend.mc-label { padding: 0; }
   .pkt-search-trigger { flex: 1; width: auto; min-width: 0; }
   .pkt-search-trigger-kbd { display: none; }
   .pkt-pill-text { display: none; }
+  .pkt-density-label { display: none; }
   .pkt-byop-pill { padding: 6px 10px; gap: 0; }
   .pkt-filter-badge { margin-left: 2px; }
 }
@@ -2244,10 +2288,11 @@ tr[data-hops]:hover { background: rgba(59,130,246,0.1); }
 .node-top-row .node-map-wrap .node-detail-map { height: 100%; }
 .node-top-row .node-qr-wrap { flex: 1; min-width: 120px; max-width: 160px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
 .node-qr-wrap--full { max-width: 240px; margin: 0 auto; }
-.node-stats-table { width: 100%; border-collapse: collapse; font-size: 13px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 12px; }
+.node-stats-table { width: 100%; border-collapse: collapse; font-size: 12px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 12px; }
 .node-stats-table td { padding: 6px 12px; border-bottom: 1px solid var(--border); }
 .node-stats-table tr:last-child td { border-bottom: none; }
 .node-stats-table tr:nth-child(even) { background: var(--row-stripe); }
+.node-stats-table tr:hover { background: var(--row-hover); }
 .node-stats-table td:first-child { font-weight: 600; color: var(--text-muted); width: 40%; white-space: nowrap; }
 .node-stats-table td:last-child { font-weight: 500; }
 @media (max-width: 768px) {
@@ -3254,4 +3299,13 @@ th.sort-active { color: var(--accent, #60a5fa); }
 
   /* ── Trace timeline ──────────────────────────────────────── */
   .tl-header, .tl-row { font-size: 13px !important; }
+
+  /* ── Channel activity timeline ───────────────────────────── */
+  .ch-activity-label { font-size: 11px !important; letter-spacing: .3px !important; }
+  .ch-activity-axis { font-size: 11px !important; flex-wrap: wrap !important; gap: 2px 8px !important; }
+  .ch-activity-summary { font-size: 11px !important; }
+  .ch-activity-timeline { padding: 6px 14px 8px !important; }
+
+  /* ── Channel name tags ───────────────────────────────────── */
+  .chan-tag { padding: 2px 8px !important; font-size: 12px !important; }
 }

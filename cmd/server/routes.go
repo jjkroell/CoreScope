@@ -50,6 +50,11 @@ type Server struct {
 	neighborMu    sync.Mutex
 	neighborGraph *NeighborGraph
 
+	// Cached top-monthly observer result — expires at midnight on the 1st of next month
+	topMonthlyMu        sync.Mutex
+	topMonthlyCache     []MonthlyObserverEntry
+	topMonthlyExpiresAt time.Time
+
 	// Router reference for OpenAPI spec generation
 	router *mux.Router
 
@@ -1860,6 +1865,15 @@ func (s *Server) handleObserverTopMonthly(w http.ResponseWriter, r *http.Request
 	if n < 1 || n > 20 {
 		n = 5
 	}
+	s.topMonthlyMu.Lock()
+	if s.topMonthlyCache != nil && time.Now().Before(s.topMonthlyExpiresAt) {
+		entries := s.topMonthlyCache
+		s.topMonthlyMu.Unlock()
+		writeJSON(w, map[string]interface{}{"topMonthly": entries})
+		return
+	}
+	s.topMonthlyMu.Unlock()
+
 	entries, err := s.db.GetObserverMonthlyTop(n)
 	if err != nil {
 		internalError(w, r.URL.Path, err)
@@ -1867,6 +1881,15 @@ func (s *Server) handleObserverTopMonthly(w http.ResponseWriter, r *http.Request
 	}
 	if entries == nil {
 		entries = []MonthlyObserverEntry{}
+	}
+	// Only cache non-empty results — expires at midnight on the 1st of next month
+	if len(entries) > 0 {
+		now := time.Now()
+		firstOfNextMonth := time.Date(now.Year(), now.Month()+1, 1, 0, 0, 0, 0, now.Location())
+		s.topMonthlyMu.Lock()
+		s.topMonthlyCache = entries
+		s.topMonthlyExpiresAt = firstOfNextMonth
+		s.topMonthlyMu.Unlock()
 	}
 	writeJSON(w, map[string]interface{}{"topMonthly": entries})
 }

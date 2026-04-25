@@ -473,6 +473,14 @@
       if (!btn) return;
       if (btn.dataset.action === 'pkt-refresh') loadPackets();
       else if (btn.dataset.action === 'pkt-byop') showBYOP();
+      else if (btn.dataset.action === 'pkt-density') {
+        const compact = document.getElementById('pktTable').classList.toggle('pkt-compact');
+        localStorage.setItem('pkt-density', compact ? 'compact' : 'comfortable');
+        const label = document.querySelector('.pkt-density-label');
+        if (label) label.textContent = compact ? ' Comfortable' : ' Compact';
+        const densityBtn = document.getElementById('pktDensityBtn');
+        if (densityBtn) densityBtn.setAttribute('aria-pressed', compact);
+      }
       else if (btn.dataset.action === 'pkt-pause') {
         packetsPaused = !packetsPaused;
         const pauseBtn = document.getElementById('pktPauseBtn');
@@ -491,6 +499,16 @@
         }
       }
     });
+
+    // Restore density preference
+    if (localStorage.getItem('pkt-density') === 'compact') {
+      const tbl = document.getElementById('pktTable');
+      if (tbl) tbl.classList.add('pkt-compact');
+      const label = document.querySelector('.pkt-density-label');
+      if (label) label.textContent = ' Comfortable';
+      const densityBtn = document.getElementById('pktDensityBtn');
+      if (densityBtn) densityBtn.setAttribute('aria-pressed', 'true');
+    }
 
     // If linked directly to a packet by ID, load its detail and filter list
     if (directPacketId) {
@@ -798,6 +816,10 @@
           </button>
           <button class="pkt-byop-pill pkt-pause-btn" id="pktPauseBtn" data-action="pkt-pause" data-tooltip="Pause live updates" aria-pressed="false">
             ⏸<span class="pkt-pill-text"> Pause</span>
+          </button>
+          <button class="pkt-byop-pill pkt-density-btn" id="pktDensityBtn" data-action="pkt-density" data-tooltip="Toggle row density" aria-pressed="false">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>
+            <span class="pkt-pill-text pkt-density-label"> Compact</span>
           </button>
         </div>
       </div>

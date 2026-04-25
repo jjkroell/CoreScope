@@ -559,7 +559,18 @@
       return `<rect x="${x}" y="${y}" width="19" height="${bh}" fill="${color}" opacity="${opacity.toFixed(2)}" rx="1" data-tooltip="${tip}"></rect>`;
     }).join('');
 
-    el.innerHTML = `<div class="ch-activity-label">24h activity</div><svg viewBox="0 0 480 ${H}" width="100%" height="${H}" preserveAspectRatio="none" class="ch-activity-svg" aria-hidden="true">${bars}</svg>`;
+    const total = buckets.reduce((s, b) => s + b.count, 0);
+    const peak = buckets.reduce((best, b) => b.count > best.count ? b : best, buckets[0]);
+    const summary = `${total.toLocaleString()} msg${total !== 1 ? 's' : ''} · peak ${peak.label} (${peak.count})`;
+
+    el.innerHTML = `
+      <div class="ch-activity-label">24h activity</div>
+      <svg viewBox="0 0 480 ${H}" width="100%" height="${H}" preserveAspectRatio="none" class="ch-activity-svg" aria-hidden="true">${bars}</svg>
+      <div class="ch-activity-axis">
+        <span>24h ago</span>
+        <span class="ch-activity-summary">${summary}</span>
+        <span>now</span>
+      </div>`;
   }
   let modalChannels = null; // full unfiltered channel list for the modal
 

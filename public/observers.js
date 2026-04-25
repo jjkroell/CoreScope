@@ -38,12 +38,58 @@
     regionChangeHandler = RegionFilter.onChange(function () { render(); });
     loadObservers();
     loadTopMonthly();
-    // Event delegation for data-action buttons
+    // Event delegation for data-action buttons and sort headers
     app.addEventListener('click', function (e) {
+      // Refresh button
       var btn = e.target.closest('[data-action]');
       if (btn && btn.dataset.action === 'obs-refresh') loadObservers();
+      // Row navigation
       var row = e.target.closest('tr[data-action="navigate"]');
       if (row) location.hash = row.dataset.value;
+      // Sort headers — patch th text/class in place to preserve inline widths
+      var th = e.target.closest('.obs-sortable[data-sort]');
+      if (th) {
+        const key = th.dataset.sort;
+        if (sortCol === key && sortDir === -1) { sortCol = 'status'; sortDir = 1; }
+        else if (sortCol === key) sortDir *= -1;
+        else { sortCol = key; sortDir = 1; }
+        const table = document.getElementById('obsTable');
+        if (!table) return;
+        table.querySelectorAll('thead .obs-sortable').forEach(function (hdr) {
+          const k = hdr.dataset.sort;
+          const active = sortCol === k;
+          hdr.classList.toggle('obs-sort-active', active);
+          const label = hdr.textContent.replace(/\s*[↑↓]$/, '').trim();
+          hdr.textContent = label + (active ? (sortDir === 1 ? ' ↑' : ' ↓') : '');
+        });
+        const el = document.getElementById('obsContent');
+        if (el) {
+          // Re-render tbody using current sort state (render() is scoped, call directly)
+          const tbody = table.querySelector('tbody');
+          if (tbody) {
+            const fn = SORT_KEYS[sortCol];
+            const selectedRegions = RegionFilter.getSelected();
+            const filtered = selectedRegions ? observers.filter(o => o.iata && selectedRegions.includes(o.iata)) : observers;
+            const rows = [...filtered].sort((a, b) => {
+              const av = fn(a), bv = fn(b);
+              return av < bv ? -sortDir : av > bv ? sortDir : 0;
+            });
+            const maxPkts = Math.max(1, ...rows.map(o => o.packetsLastHour || 0));
+            tbody.innerHTML = rows.map(o => {
+              const h = healthStatus(o.last_seen);
+              return `<tr style="cursor:pointer" tabindex="0" role="row" data-action="navigate" data-value="#/observers/${encodeURIComponent(o.id)}" data-obs-id="${encodeURIComponent(o.id)}">
+                <td><span class="health-dot ${h.cls}" data-tooltip="${h.label}"></span> ${h.label}</td>
+                <td class="mono">${o.name || o.id}</td>
+                <td>${o.iata || '—'}</td>
+                <td>${timeAgo(o.last_seen)}</td>
+                <td>${(o.packet_count || 0).toLocaleString()}</td>
+                <td>${sparkBar(o.packetsLastHour || 0, maxPkts)}</td>
+                <td>${uptimeStr(o.first_seen)}</td>
+              </tr>`;
+            }).join('');
+          }
+        }
+      }
     });
     // #209 — Keyboard accessibility for observer rows
     app.addEventListener('keydown', function (e) {
@@ -76,8 +122,8 @@
     const el = document.getElementById('obsTopMonthly');
     if (!el) return;
     try {
-      // Completed month data is static — cache for 1 hour
-      const data = await api('/observers/top-monthly?n=5', { ttl: 3600000 });
+      // No client-side cache — avoid caching empty results on first load
+      const data = await api('/observers/top-monthly?n=5', { bust: true });
       const entries = data.topMonthly || [];
       if (!entries.length) { el.innerHTML = ''; return; }
 
@@ -239,37 +285,27 @@
     }
 
     el.innerHTML = `
-      <div class="obs-summary">
-        <span class="obs-stat"><span class="health-dot health-green"></span> ${online} Online</span>
-        <span class="obs-stat"><span class="health-dot health-yellow"></span> ${stale} Stale</span>
-        <span class="obs-stat"><span class="health-dot health-red"></span> ${offline} Offline</span>
-        <span class="obs-stat">📡 ${filtered.length} Total</span>
-      </div>
-      <div class="obs-table-scroll"><table class="data-table obs-table" id="obsTable">
+      <div class="obs-card">
+        <div class="obs-summary">
+          <span class="obs-stat"><span class="health-dot health-green"></span> ${online} Online</span>
+          <span class="obs-stat"><span class="health-dot health-yellow"></span> ${stale} Stale</span>
+          <span class="obs-stat"><span class="health-dot health-red"></span> ${offline} Offline</span>
+          <span class="obs-stat">📡 ${filtered.length} Total</span>
+        </div>
+        <div class="obs-table-scroll"><table class="data-table obs-table" id="obsTable">
         <caption class="sr-only">Observer status and statistics</caption>
+        <colgroup>
+          <col class="obs-col-status"><col class="obs-col-name"><col class="obs-col-region">
+          <col class="obs-col-lastseen"><col class="obs-col-rawpkts"><col class="obs-col-rate"><col class="obs-col-uptime">
+        </colgroup>
         <thead><tr>
           ${thHtml('Status','status')}${thHtml('Name','name')}${thHtml('Region','region')}
           <th scope="col">Last Seen</th>
           <th scope="col">Total Raw Pkts</th>${thHtml('Pkts/Hour','rate')}${thHtml('Uptime','uptime')}
         </tr></thead>
         <tbody>${renderRows()}</tbody>
-      </table></div>`;
-
-    // Sort header click handlers
-    el.querySelectorAll('.obs-sortable').forEach(th => {
-      th.addEventListener('click', () => {
-        const key = th.dataset.sort;
-        if (sortCol === key) sortDir *= -1;
-        else { sortCol = key; sortDir = 1; }
-        // Re-render just the thead and tbody in place
-        const table = el.querySelector('#obsTable');
-        table.querySelector('thead tr').innerHTML = `
-          ${thHtml('Status','status')}${thHtml('Name','name')}${thHtml('Region','region')}
-          <th scope="col">Last Seen</th>
-          <th scope="col">Total Raw Pkts</th>${thHtml('Pkts/Hour','rate')}${thHtml('Uptime','uptime')}`;
-        table.querySelector('tbody').innerHTML = renderRows();
-      });
-    });
+      </table></div>
+      </div>`;
 
     makeColumnsResizable('#obsTable', 'meshcore-obs-col-widths');
   }
