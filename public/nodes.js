@@ -202,7 +202,7 @@
         : '<span class="text-muted">' + escapeHtml(name) + '</span>';
       var role = nb.role || '—';
       var roleBadge = nb.role
-        ? '<span class="badge" style="background:' + (ROLE_COLORS[nb.role] || 'var(--surface-2)') + ';color:#fff;font-size:10px">' + escapeHtml(role) + '</span>'
+        ? '<span class="badge" style="background:' + (ROLE_COLORS[nb.role] || '#6b7280') + '20;color:' + (ROLE_COLORS[nb.role] || '#6b7280') + '">' + escapeHtml(role) + '</span>'
         : '<span class="text-muted">—</span>';
       var scoreTitle = 'Observations: ' + nb.count;
       if (nb.avg_snr != null) scoreTitle += ' · Avg SNR: ' + Number(nb.avg_snr).toFixed(1) + ' dB';
@@ -357,6 +357,7 @@
         </button>
       </div>
       <div id="nodesRegionFilter" class="region-filter-container"></div>
+      <div id="nodesControls"></div>
       <div id="nodesLeft" aria-live="polite" aria-relevant="additions removals"></div>
     </div>
     <div class="modal-overlay pkt-search-overlay nodes-search-overlay" id="nodesSearchOverlay" style="display:none" aria-hidden="true">
@@ -1069,7 +1070,9 @@
     const el = document.getElementById('nodesLeft');
     if (!el) return;
 
-    el.innerHTML = `
+    // Tabs + filters sit outside the scroll area so they're always visible
+    const ctrlEl = document.getElementById('nodesControls');
+    if (ctrlEl) ctrlEl.innerHTML = `
       <div class="nodes-tabs-bar">
         <div class="nodes-tabs" id="nodeTabs">
           ${TABS.map(t => {
@@ -1099,8 +1102,11 @@
             <option value="30d" ${lastHeard==='30d'?'selected':''}>30 days</option>
           </select>
         </div>
-      </div>
-      <table class="data-table" id="nodesTable">
+      </div>`;
+
+    // Table sits directly in the scroll container — no wrapper between th and #nodesLeft
+    el.innerHTML = `
+      <table class="data-table nodes-table" id="nodesTable">
         <thead><tr>
           <th scope="col" class="col-node-name" data-sort-key="name">Name</th>
           <th scope="col" class="col-pubkey" data-sort-key="public_key">Public Key</th>
@@ -1114,7 +1120,7 @@
     // Tab clicks
     const nodeTabs = document.getElementById('nodeTabs');
     initTabBar(nodeTabs);
-    el.querySelectorAll('.node-tab').forEach(btn => {
+    document.querySelectorAll('.node-tab').forEach(btn => {
       btn.addEventListener('click', () => { activeTab = btn.dataset.tab; updateNodesUrl(); loadNodes(); });
     });
 
@@ -1237,7 +1243,7 @@
       const lastSeenClass = status === 'active' ? 'last-seen-active' : 'last-seen-stale';
       return `<tr data-key="${n.public_key}" data-action="select" data-value="${n.public_key}" tabindex="0" role="row" class="${selectedKey === n.public_key ? 'selected' : ''}${isClaimed ? ' claimed-row' : ''}">
         <td class="col-node-name">${isClaimed ? '<span class="claimed-badge" title="My Mesh">★</span> ' : favStar(n.public_key, 'node-fav', n.name)}<strong>${n.name || '(unnamed)'}</strong>${dupNameBadge(n.name, n.public_key, dupMap)}</td>
-        <td class="mono col-pubkey">${formatPubKey(n.public_key, n.hash_size, 16)}</td>
+        <td class="mono col-pubkey" data-copy="${n.public_key}" data-tooltip="Click to copy public key">${formatPubKey(n.public_key, n.hash_size, 16)}</td>
         <td class="col-node-role">${renderRoleBadge(n.role, roleColor)}</td>
         <td class="col-node-lastseen ${lastSeenClass}">${renderNodeTimestampHtml(n.last_heard || n.last_seen)}</td>
         <td class="col-node-adverts">${n.advert_count || 0}</td>

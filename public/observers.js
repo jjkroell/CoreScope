@@ -6,16 +6,7 @@
   let wsHandler = null;
   let refreshTimer = null;
   let regionChangeHandler = null;
-  let sortCol = 'status';
-  let sortDir = 1; // 1 = asc, -1 = desc
-
-  const SORT_KEYS = {
-    status:  o => { const c = healthStatus(o.last_seen).cls; return c === 'health-green' ? 0 : c === 'health-yellow' ? 1 : 2; },
-    name:    o => (o.name || o.id || '').toLowerCase(),
-    region:  o => (o.iata || '').toLowerCase(),
-    rate:    o => o.packetsLastHour || 0,
-    uptime:  o => o.first_seen ? new Date(o.first_seen).getTime() : Infinity,
-  };
+  let _obsSortCtrl = null;
 
   function init(app) {
     const isMobile = Layout.isTabletOrBelow();
@@ -38,58 +29,12 @@
     regionChangeHandler = RegionFilter.onChange(function () { render(); });
     loadObservers();
     loadTopMonthly();
-    // Event delegation for data-action buttons and sort headers
+    // Event delegation for data-action buttons and row navigation
     app.addEventListener('click', function (e) {
-      // Refresh button
       var btn = e.target.closest('[data-action]');
       if (btn && btn.dataset.action === 'obs-refresh') loadObservers();
-      // Row navigation
       var row = e.target.closest('tr[data-action="navigate"]');
       if (row) location.hash = row.dataset.value;
-      // Sort headers — patch th text/class in place to preserve inline widths
-      var th = e.target.closest('.obs-sortable[data-sort]');
-      if (th) {
-        const key = th.dataset.sort;
-        if (sortCol === key && sortDir === -1) { sortCol = 'status'; sortDir = 1; }
-        else if (sortCol === key) sortDir *= -1;
-        else { sortCol = key; sortDir = 1; }
-        const table = document.getElementById('obsTable');
-        if (!table) return;
-        table.querySelectorAll('thead .obs-sortable').forEach(function (hdr) {
-          const k = hdr.dataset.sort;
-          const active = sortCol === k;
-          hdr.classList.toggle('obs-sort-active', active);
-          const label = hdr.textContent.replace(/\s*[↑↓]$/, '').trim();
-          hdr.textContent = label + (active ? (sortDir === 1 ? ' ↑' : ' ↓') : '');
-        });
-        const el = document.getElementById('obsContent');
-        if (el) {
-          // Re-render tbody using current sort state (render() is scoped, call directly)
-          const tbody = table.querySelector('tbody');
-          if (tbody) {
-            const fn = SORT_KEYS[sortCol];
-            const selectedRegions = RegionFilter.getSelected();
-            const filtered = selectedRegions ? observers.filter(o => o.iata && selectedRegions.includes(o.iata)) : observers;
-            const rows = [...filtered].sort((a, b) => {
-              const av = fn(a), bv = fn(b);
-              return av < bv ? -sortDir : av > bv ? sortDir : 0;
-            });
-            const maxPkts = Math.max(1, ...rows.map(o => o.packetsLastHour || 0));
-            tbody.innerHTML = rows.map(o => {
-              const h = healthStatus(o.last_seen);
-              return `<tr style="cursor:pointer" tabindex="0" role="row" data-action="navigate" data-value="#/observers/${encodeURIComponent(o.id)}" data-obs-id="${encodeURIComponent(o.id)}">
-                <td><span class="health-dot ${h.cls}" data-tooltip="${h.label}"></span> ${h.label}</td>
-                <td class="mono">${o.name || o.id}</td>
-                <td>${o.iata || '—'}</td>
-                <td>${timeAgo(o.last_seen)}</td>
-                <td>${(o.packet_count || 0).toLocaleString()}</td>
-                <td>${sparkBar(o.packetsLastHour || 0, maxPkts)}</td>
-                <td>${uptimeStr(o.first_seen)}</td>
-              </tr>`;
-            }).join('');
-          }
-        }
-      }
     });
     // #209 — Keyboard accessibility for observer rows
     app.addEventListener('keydown', function (e) {
@@ -115,6 +60,7 @@
     refreshTimer = null;
     if (regionChangeHandler) RegionFilter.offChange(regionChangeHandler);
     regionChangeHandler = null;
+    if (_obsSortCtrl) { _obsSortCtrl.destroy(); _obsSortCtrl = null; }
     observers = [];
   }
 
@@ -171,12 +117,12 @@
   // NOTE: Comparing server timestamps to Date.now() can skew if client/server
   // clocks differ. We add ±30s tolerance to thresholds to reduce false positives.
   function healthStatus(lastSeen) {
-    if (!lastSeen) return { cls: 'health-red', label: 'Unknown' };
+    if (!lastSeen) return { cls: 'health-red', label: 'Unknown', sortVal: 2 };
     const ago = Date.now() - new Date(lastSeen).getTime();
     const tolerance = 30000; // 30s tolerance for clock skew
-    if (ago < 600000 + tolerance) return { cls: 'health-green', label: 'Online' };    // < 10 min + tolerance
-    if (ago < 3600000 + tolerance) return { cls: 'health-yellow', label: 'Stale' };   // < 1 hour + tolerance
-    return { cls: 'health-red', label: 'Offline' };
+    if (ago < 600000 + tolerance) return { cls: 'health-green', label: 'Online',   sortVal: 0 };
+    if (ago < 3600000 + tolerance) return { cls: 'health-yellow', label: 'Stale',  sortVal: 1 };
+    return { cls: 'health-red', label: 'Offline', sortVal: 2 };
   }
 
   function uptimeStr(firstSeen) {
@@ -193,6 +139,22 @@
     if (max === 0) return `<span class="text-muted">0/hr</span>`;
     const pct = Math.min(100, Math.round((count / max) * 100));
     return `<span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap"><span style="display:inline-block;width:60px;height:12px;background:var(--border);border-radius:3px;overflow:hidden;vertical-align:middle"><span style="display:block;height:100%;width:${pct}%;background:linear-gradient(90deg,#3b82f6,#60a5fa);border-radius:3px"></span></span><span style="font-size:11px">${count}/hr</span></span>`;
+  }
+
+  // Build a row HTML string with data-value attributes for TableSort
+  function buildRow(o, maxPkts) {
+    const h = healthStatus(o.last_seen);
+    const rate = o.packetsLastHour || 0;
+    const uptimeMs = o.first_seen ? new Date(o.first_seen).getTime() : 0;
+    return `<tr style="cursor:pointer" tabindex="0" role="row" data-action="navigate" data-value="#/observers/${encodeURIComponent(o.id)}" data-obs-id="${encodeURIComponent(o.id)}">
+      <td data-value="${h.sortVal}"><span class="health-dot ${h.cls}" data-tooltip="${h.label}"></span> ${h.label}</td>
+      <td class="mono">${o.name || o.id}</td>
+      <td>${o.iata || '—'}</td>
+      <td>${timeAgo(o.last_seen)}</td>
+      <td>${(o.packet_count || 0).toLocaleString()}</td>
+      <td data-value="${rate}">${sparkBar(rate, maxPkts)}</td>
+      <td data-value="${uptimeMs}">${uptimeStr(o.first_seen)}</td>
+    </tr>`;
   }
 
   function render() {
@@ -213,40 +175,9 @@
     const maxPktsHr = Math.max(1, ...filtered.map(o => o.packetsLastHour || 0));
 
     // Summary counts
-    const online = filtered.filter(o => healthStatus(o.last_seen).cls === 'health-green').length;
-    const stale = filtered.filter(o => healthStatus(o.last_seen).cls === 'health-yellow').length;
+    const online  = filtered.filter(o => healthStatus(o.last_seen).cls === 'health-green').length;
+    const stale   = filtered.filter(o => healthStatus(o.last_seen).cls === 'health-yellow').length;
     const offline = filtered.filter(o => healthStatus(o.last_seen).cls === 'health-red').length;
-
-    function sortedRows() {
-      const fn = SORT_KEYS[sortCol];
-      return [...filtered].sort((a, b) => {
-        const av = fn(a), bv = fn(b);
-        return av < bv ? -sortDir : av > bv ? sortDir : 0;
-      });
-    }
-
-    function thHtml(label, key) {
-      const active = sortCol === key;
-      const arrow = active ? (sortDir === 1 ? ' ↑' : ' ↓') : '';
-      return `<th scope="col" class="obs-sortable${active ? ' obs-sort-active' : ''}" data-sort="${key}" style="cursor:pointer" title="Sort by ${label}">${label}${arrow}</th>`;
-    }
-
-    function renderRows() {
-      const rows = sortedRows();
-      const maxPkts = Math.max(1, ...rows.map(o => o.packetsLastHour || 0));
-      return rows.map(o => {
-        const h = healthStatus(o.last_seen);
-        return `<tr style="cursor:pointer" tabindex="0" role="row" data-action="navigate" data-value="#/observers/${encodeURIComponent(o.id)}" data-obs-id="${encodeURIComponent(o.id)}">
-          <td><span class="health-dot ${h.cls}" data-tooltip="${h.label}"></span> ${h.label}</td>
-          <td class="mono">${o.name || o.id}</td>
-          <td>${o.iata || '—'}</td>
-          <td>${timeAgo(o.last_seen)}</td>
-          <td>${(o.packet_count || 0).toLocaleString()}</td>
-          <td>${sparkBar(o.packetsLastHour || 0, maxPkts)}</td>
-          <td>${uptimeStr(o.first_seen)}</td>
-        </tr>`;
-      }).join('');
-    }
 
     // If the table already exists, patch cells in-place to preserve hover state
     const existingTable = el.querySelector('#obsTable');
@@ -260,32 +191,36 @@
           <span class="obs-stat">📡 ${filtered.length} Total</span>`;
       }
       const tbody = existingTable.querySelector('tbody');
-      const rows = sortedRows();
-      const maxPkts = Math.max(1, ...rows.map(o => o.packetsLastHour || 0));
       const existingIds = new Set(Array.from(tbody.querySelectorAll('tr[data-obs-id]')).map(r => r.dataset.obsId));
-      const newIds = new Set(rows.map(o => encodeURIComponent(o.id)));
-      // If observer list changed (added/removed), do a full tbody replace
+      const newIds = new Set(filtered.map(o => encodeURIComponent(o.id)));
+      // If observer list changed (added/removed), do a full tbody replace then re-sort
       const setsMatch = existingIds.size === newIds.size && [...newIds].every(id => existingIds.has(id));
       if (!setsMatch) {
-        tbody.innerHTML = renderRows();
+        tbody.innerHTML = filtered.map(o => buildRow(o, maxPktsHr)).join('');
+        if (_obsSortCtrl) _obsSortCtrl.sort();
         return;
       }
       // Patch only the changing cells (status, last seen, packets, rate) — leave row nodes intact
-      for (const o of rows) {
+      for (const o of filtered) {
         const row = tbody.querySelector(`tr[data-obs-id="${encodeURIComponent(o.id)}"]`);
         if (!row) continue;
         const cells = row.cells;
         const h = healthStatus(o.last_seen);
+        const rate = o.packetsLastHour || 0;
+        cells[0].setAttribute('data-value', h.sortVal);
         cells[0].innerHTML = `<span class="health-dot ${h.cls}" data-tooltip="${h.label}"></span> ${h.label}`;
         cells[3].textContent = timeAgo(o.last_seen);
         cells[4].textContent = (o.packet_count || 0).toLocaleString();
-        cells[5].innerHTML = sparkBar(o.packetsLastHour || 0, maxPkts);
+        cells[5].setAttribute('data-value', rate);
+        cells[5].innerHTML = sparkBar(rate, maxPktsHr);
       }
+      // Re-sort with updated values
+      if (_obsSortCtrl) _obsSortCtrl.sort();
       return;
     }
 
     el.innerHTML = `
-      <div class="obs-card">
+      <div class="data-card obs-card">
         <div class="obs-summary">
           <span class="obs-stat"><span class="health-dot health-green"></span> ${online} Online</span>
           <span class="obs-stat"><span class="health-dot health-yellow"></span> ${stale} Stale</span>
@@ -299,13 +234,25 @@
           <col class="obs-col-lastseen"><col class="obs-col-rawpkts"><col class="obs-col-rate"><col class="obs-col-uptime">
         </colgroup>
         <thead><tr>
-          ${thHtml('Status','status')}${thHtml('Name','name')}${thHtml('Region','region')}
+          <th scope="col" data-sort-key="status" data-type="numeric">Status</th>
+          <th scope="col" data-sort-key="name">Name</th>
+          <th scope="col" data-sort-key="region">Region</th>
           <th scope="col">Last Seen</th>
-          <th scope="col">Total Raw Pkts</th>${thHtml('Pkts/Hour','rate')}${thHtml('Uptime','uptime')}
+          <th scope="col">Total Raw Pkts</th>
+          <th scope="col" data-sort-key="rate" data-type="numeric">Pkts/Hour</th>
+          <th scope="col" data-sort-key="uptime" data-type="numeric">Uptime</th>
         </tr></thead>
-        <tbody>${renderRows()}</tbody>
+        <tbody>${filtered.map(o => buildRow(o, maxPktsHr)).join('')}</tbody>
       </table></div>
       </div>`;
+
+    const table = el.querySelector('#obsTable');
+    if (_obsSortCtrl) { _obsSortCtrl.destroy(); _obsSortCtrl = null; }
+    _obsSortCtrl = TableSort.init(table, {
+      defaultColumn: 'status',
+      defaultDirection: 'asc',
+      storageKey: 'meshcore-obs-sort',
+    });
 
     makeColumnsResizable('#obsTable', 'meshcore-obs-col-widths');
   }

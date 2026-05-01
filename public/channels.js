@@ -934,11 +934,14 @@
 
     // Mobile: intercept browser back gesture while in channel message view
     _popstateHandler = function () {
+      // iOS Safari (and some Android browsers) fire popstate for ANY hash change,
+      // including <a href="#/..."> link clicks that navigate away from channels.
+      // Bail out immediately if we're no longer on a channels URL — the user
+      // intentionally navigated elsewhere (e.g. "View packet →" link).
+      if (!location.hash.startsWith('#/channels')) return;
       if (_skipNextPopstate) {
         _skipNextPopstate = false;
-        if (location.hash.startsWith('#/channels')) {
-          history.replaceState(null, '', '#/channels');
-        }
+        history.replaceState(null, '', '#/channels');
         return;
       }
       // Only intercept back gesture when we pushed a duplicate mobile history entry.
@@ -1582,7 +1585,7 @@
         <div class="ch-msg-content">
           <div class="ch-msg-sender ch-sender-link ch-tappable" style="color:${senderColor}" tabindex="0" role="button" data-node="${safeId}">${escapeHtml(sender)}</div>
           <div class="ch-msg-bubble">${displayText}</div>
-          <div class="ch-msg-meta">${meta.join(' · ')}${msg.packetHash ? ` · <a href="#/packets/${msg.packetHash}" class="ch-analyze-link">View packet →</a>` : ''}</div>
+          <div class="ch-msg-meta">${meta.join(' · ')}${msg.packetHash ? ` · <a href="#/packets/${msg.packetHash}?returnTo=${encodeURIComponent(location.hash.slice(1))}" class="ch-analyze-link">View packet →</a>` : ''}</div>
         </div>
       </div>`;
     }).join('');

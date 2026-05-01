@@ -124,7 +124,19 @@ window.HopResolver = (function() {
     // First pass: find candidates with regional filtering
     for (const hop of hops) {
       const h = hop.toLowerCase();
-      const allCandidates = prefixIdx[h] || [];
+      const hopBytes = Math.floor(hop.length / 2);
+
+      // Hash-size pre-filter: a node configured for N-byte hash IDs can only
+      // appear as a 2N-char hop. Filter out candidates whose confirmed hash_size
+      // doesn't match this hop's byte length. Mirrors server resolveWithContext
+      // Priority 0. Only applies to standard 1/2/3-byte hops; longer keys
+      // (full pubkeys in resolved_path lookups) are not filtered.
+      let allCandidates = prefixIdx[h] || [];
+      if (hopBytes >= 1 && hopBytes <= 3 && allCandidates.length > 1) {
+        const sizeFiltered = allCandidates.filter(c => !c.hash_size || c.hash_size === hopBytes);
+        if (sizeFiltered.length > 0) allCandidates = sizeFiltered;
+      }
+
       if (allCandidates.length === 0) {
         resolved[hop] = { name: null, candidates: [], conflicts: [] };
       } else if (allCandidates.length === 1) {

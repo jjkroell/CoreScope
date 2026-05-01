@@ -75,11 +75,11 @@
   var activeRoleFilters = null; // null = all pass; Set = only listed roles shown
 
   /* ---- Panel Corner Positioning (#608 M0) ---- */
-  var PANEL_DEFAULTS = { liveFeed: 'bl', liveLegend: 'br', liveNodeDetail: 'tr' };
+  var PANEL_DEFAULTS = { liveFeed: 'bl', liveLegend: 'br' };
   var CORNER_CYCLE = ['tl', 'tr', 'br', 'bl'];
   var CORNER_ARROWS = { tl: '↘', tr: '↙', bl: '↗', br: '↖' };
   var CORNER_LABELS = { tl: 'top-left', tr: 'top-right', bl: 'bottom-left', br: 'bottom-right' };
-  var PANEL_NAMES = { liveFeed: 'Feed', liveLegend: 'Legend', liveNodeDetail: 'Node detail' };
+  var PANEL_NAMES = { liveFeed: 'Feed', liveLegend: 'Legend' };
 
   function getPanelPositions() {
     var pos = {};
@@ -115,7 +115,16 @@
     }
   }
 
+  // Bump this string whenever PANEL_DEFAULTS changes to force a one-time reset of saved positions.
+  var PANEL_LAYOUT_VERSION = '4';
+
   function initPanelPositions() {
+    if (localStorage.getItem('panel-layout-version') !== PANEL_LAYOUT_VERSION) {
+      for (var id in PANEL_DEFAULTS) {
+        try { localStorage.removeItem('panel-corner-' + id); } catch (_) {}
+      }
+      try { localStorage.setItem('panel-layout-version', PANEL_LAYOUT_VERSION); } catch (_) {}
+    }
     var positions = getPanelPositions();
     for (var id in positions) {
       applyPanelPosition(id, positions[id]);
@@ -863,6 +872,7 @@
         <div class="live-overlay live-feed" id="liveFeed">
           <div class="panel-header">
             <span class="panel-feed-title">Recent Packets</span>
+            <span class="feed-oldest-age" id="feedOldestAge"></span>
             <button class="feed-hide-btn" id="feedHideBtn" data-tooltip="Hide feed">✕</button>
           </div>
           <div class="panel-content" aria-live="polite" aria-relevant="additions" role="log"></div>
@@ -872,8 +882,10 @@
         <div class="live-overlay live-node-detail hidden" id="liveNodeDetail">
           <div class="panel-header">
             <button class="panel-corner-btn" data-panel="liveNodeDetail" data-tooltip="Move panel to next corner" aria-label="Move panel to next corner">◫</button>
+            <span class="panel-feed-title">Node Info</span>
             <button class="feed-hide-btn" id="nodeDetailClose" data-tooltip="Close">✕</button>
           </div>
+          <div class="node-detail-hero" id="nodeDetailHero"></div>
           <div class="panel-content" id="nodeDetailContent"></div>
         </div>
         <button class="legend-toggle-btn" id="legendToggleBtn" aria-label="Show legend" data-tooltip="Show legend">🎨</button>
@@ -887,10 +899,11 @@
             <li data-type="ADVERT"><span class="live-dot" style="background:${TYPE_COLORS.ADVERT}" aria-hidden="true"></span> Advert</li>
             <li data-type="GRP_TXT"><span class="live-dot" style="background:${TYPE_COLORS.GRP_TXT}" aria-hidden="true"></span> Message</li>
             <li data-type="TXT_MSG"><span class="live-dot" style="background:${TYPE_COLORS.TXT_MSG}" aria-hidden="true"></span> Direct</li>
-            <li data-type="REQUEST"><span class="live-dot" style="background:${TYPE_COLORS.REQUEST}" aria-hidden="true"></span> Request</li>
+            <li data-type="REQ"><span class="live-dot" style="background:${TYPE_COLORS.REQ}" aria-hidden="true"></span> Request</li>
             <li data-type="RESPONSE"><span class="live-dot" style="background:${TYPE_COLORS.RESPONSE}" aria-hidden="true"></span> Response</li>
             <li data-type="TRACE"><span class="live-dot" style="background:${TYPE_COLORS.TRACE}" aria-hidden="true"></span> Trace</li>
             <li data-type="PATH"><span class="live-dot" style="background:${TYPE_COLORS.PATH}" aria-hidden="true"></span> Path</li>
+            <li data-type="ANON_REQ"><span class="live-dot" style="background:${TYPE_COLORS.ANON_REQ}" aria-hidden="true"></span> Anon Req</li>
           </ul>
           <h3 class="legend-title" style="margin-top:8px">NODE ROLES</h3>
           <ul class="legend-list" id="roleLegendList"></ul>
@@ -1516,6 +1529,7 @@
       pktTimestamps = pktTimestamps.filter(t => now - t < 60000);
       const el = document.getElementById('livePktRate');
       if (el) el.textContent = pktTimestamps.length;
+      updateFeedOldestAge();
     }, 2000);
   }
 
@@ -1523,9 +1537,11 @@
     activeNodeDetailKey = pubkey;
     const panel = document.getElementById('liveNodeDetail');
     const content = document.getElementById('nodeDetailContent');
+    const hero = document.getElementById('nodeDetailHero');
     const backdrop = document.getElementById('nodeDetailBackdrop');
     panel.classList.remove('hidden');
     if (backdrop && Layout.isTabletOrBelow()) backdrop.classList.remove('hidden');
+    if (hero) hero.innerHTML = '';
     content.innerHTML = '<div style="padding:20px;color:var(--text-muted)">Loading…</div>';
     try {
       const [data, healthData] = await Promise.all([
@@ -1547,18 +1563,23 @@
       const statusDot = ageMs < thresholds.degradedMs ? 'health-green' : ageMs < thresholds.silentMs ? 'health-yellow' : 'health-red';
       const statusLabel = ageMs < thresholds.degradedMs ? 'Online' : ageMs < thresholds.silentMs ? 'Degraded' : 'Offline';
 
+      // Populate the anchored hero — stays pinned while content scrolls
+      if (hero) {
+        hero.innerHTML = `
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+            <span class="${statusDot}" style="font-size:18px" aria-hidden="true">●</span>
+            <h3 style="margin:0;font-size:16px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(n.name || 'Unknown')}</h3>
+          </div>
+          <div>
+            <span class="badge" style="background:${roleColor}20;color:${roleColor}">${roleLabel}</span>
+            <span style="color:var(--text-muted);font-size:12px;margin-left:8px;">${statusLabel}</span>
+          </div>`;
+      }
+
       let html = `
         <div style="padding:16px;">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
-            <span class="${statusDot}" style="font-size:18px" aria-hidden="true">●</span>
-            <h3 style="margin:0;font-size:16px;font-weight:700;">${escapeHtml(n.name || 'Unknown')}</h3>
-          </div>
-          <div style="margin-bottom:12px;">
-            <span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:600;background:${roleColor};color:#fff;">${roleLabel.toUpperCase()}</span>
-            <span style="color:var(--text-muted);font-size:12px;margin-left:8px;">${statusLabel}</span>
-          </div>
           <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">
-            <code style="font-size:10px;word-break:break-all;">${escapeHtml(n.public_key)}</code>
+            <code style="font-size:10px;">${escapeHtml(n.public_key.slice(0, 16))}…</code>
           </div>
           <table style="font-size:12px;width:100%;border-collapse:collapse;">
             <tr><td style="color:var(--text-muted);padding:4px 8px 4px 0;">Last Seen</td><td>${lastSeen}</td></tr>
@@ -1899,6 +1920,7 @@
       item.setAttribute('tabindex', '0');
       item.setAttribute('role', 'button');
       if (group.hash) item.setAttribute('data-hash', group.hash);
+      item.dataset.ts = String(group.latestTs || Date.now());
       item.style.cursor = 'pointer';
       item.innerHTML = `
         <span class="feed-icon" style="color:${color}">${icon}</span>
@@ -1916,6 +1938,7 @@
         feedDedup.set(group.hash, { element: item, count: group.count, pkt, packets: group.packets, createdAt: Date.now() });
       }
     }
+    updateFeedOldestAge();
   }
 
   function applyFavoritesFilter() {
@@ -3010,6 +3033,7 @@
     item.setAttribute('tabindex', '0');
     item.setAttribute('role', 'button');
     if (hash) item.setAttribute('data-hash', hash);
+    item.dataset.ts = String(pkt._ts || Date.now());
     item.style.cursor = 'pointer';
     // Channel color highlighting for GRP_TXT packets (#271)
     var _chanStyle = _getChannelStyle(pkt);
@@ -3026,6 +3050,7 @@
     feed.prepend(item);
     requestAnimationFrame(() => requestAnimationFrame(() => item.classList.remove('live-feed-enter')));
     while (feed.children.length > 15) feed.removeChild(feed.lastChild);
+    updateFeedOldestAge();
 
     // Register
     if (hash) {
@@ -3038,6 +3063,20 @@
         }
       }
     }
+  }
+
+  function updateFeedOldestAge() {
+    const el = document.getElementById('feedOldestAge');
+    if (!el) return;
+    const feedContent = document.querySelector('#liveFeed .panel-content');
+    if (!feedContent) return;
+    const items = feedContent.querySelectorAll('.live-feed-item');
+    if (!items.length) { el.textContent = ''; return; }
+    const oldest = items[items.length - 1];
+    const ts = Number(oldest.dataset.ts);
+    if (!ts) { el.textContent = ''; return; }
+    const s = Math.floor((Date.now() - ts) / 1000);
+    el.textContent = 'oldest: ' + (s < 5 ? 'just now' : timeAgo(new Date(ts).toISOString()));
   }
 
   function showFeedCard(anchor, pkt, color) {

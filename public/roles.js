@@ -16,7 +16,8 @@
 
   window.TYPE_COLORS = {
     ADVERT: '#4a9966', GRP_TXT: '#3b82f6', TXT_MSG: '#b07a20', ACK: '#6b7280',
-    REQUEST: '#a855f7', RESPONSE: '#06b6d4', TRACE: '#ec4899', PATH: '#14b8a6',
+    REQ: '#a855f7', REQUEST: '#a855f7', // REQ = server canonical name; REQUEST = legacy alias
+    RESPONSE: '#06b6d4', TRACE: '#ec4899', PATH: '#14b8a6',
     ANON_REQ: '#b05468', UNKNOWN: '#6b7280'
   };
 

@@ -308,6 +308,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 }
 .page-header h2 { font-size: 18px; font-weight: 700; }
 .page-header .count { color: var(--text-muted); font-weight: 400; font-size: 14px; margin-left: 8px; }
+.pkt-last-updated { font-size: 11px; color: var(--text-muted); opacity: 0.7; margin-left: auto; }
 
 /* === Filter Bar === */
 .filter-bar {
@@ -374,8 +375,6 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 /* Packets table: fixed layout makes column widths from colgroup respected,
    which enables overflow:hidden + text-overflow:ellipsis on td cells */
 #pktTable { table-layout: fixed; }
-#pktTable.pkt-compact th { padding: 4px 8px; }
-#pktTable.pkt-compact td { padding: 2px 8px; font-size: 11px; }
 #pktTable th, #pktTable td { text-align: left; }
 #pktTable th { overflow: hidden; text-overflow: ellipsis; }
 #pktTable .col-size, #pktTable .col-type, #pktTable .col-rpt { text-align: center; }
@@ -398,7 +397,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
   transition: background 0.15s; line-height: 1.4;
 }
 .pkt-byop-pill:hover { background: color-mix(in srgb, var(--accent) 20%, transparent); }
-.pkt-pause-btn.paused, .pkt-density-btn[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); border-color: var(--accent); }
+.pkt-pause-btn.paused { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); border-color: var(--accent); }
 .pkt-pause-btn.paused:hover { background: color-mix(in srgb, var(--accent) 20%, transparent); }
 .pkt-pause-play { color: var(--status-yellow); }
 /* Active filter count badge on the Filters pill */
@@ -1027,7 +1026,12 @@ fieldset.mc-section legend.mc-label { padding: 0; }
 
 /* === Nodes Page === */
 .nodes-page { display: flex; flex-direction: column; height: 100%; }
-#nodesLeft { flex: 1; min-height: 0; overflow: auto; }
+#nodesControls { flex-shrink: 0; padding: 0 24px; }
+#nodesLeft { flex: 1; min-height: 0; overflow: auto; padding: 0 24px 8px; }
+/* nodes-table: card-like appearance directly on the table so no wrapper breaks sticky.
+   border-collapse:separate + border-spacing:0 is required for border-radius to render;
+   overflow:hidden is intentionally omitted so position:sticky on thead th works. */
+.nodes-table { min-width: 480px; max-width: 1200px; margin: 0 auto 8px; border-radius: 8px; border: 1px solid var(--border); border-collapse: separate; border-spacing: 0; background: var(--card-bg); }
 
 /* Node detail modal */
 .nodes-detail-overlay { align-items: flex-start; padding-top: 60px; }
@@ -1072,14 +1076,14 @@ fieldset.mc-section legend.mc-label { padding: 0; }
   .role-icon { display: inline; }
 }
 
-/* Nodes table: fixed layout + centered columns on mobile/tablet */
+/* Nodes table: fixed layout on mobile/tablet */
 @media (max-width: 768px) {
   #nodesTable { table-layout: fixed; width: 100%; }
-  #nodesTable th, #nodesTable td { text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #nodesTable .col-node-name     { width: 95px; text-align: left; }
-  #nodesTable .col-node-role     { width: 24px; }
-  #nodesTable .col-node-lastseen { width: 28px; }
-  #nodesTable .col-node-adverts  { width: 26px; }
+  #nodesTable th, #nodesTable td { text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #nodesTable .col-node-name     { width: 95px; }
+  #nodesTable .col-node-role     { width: 40px; text-align: center; }
+  #nodesTable .col-node-lastseen { width: 70px; }
+  #nodesTable .col-node-adverts  { width: 54px; text-align: right; }
 }
 /* Tighter cell padding on mobile to maximise column space */
 @media (max-width: 640px) {
@@ -1272,12 +1276,19 @@ fieldset.mc-section legend.mc-label { padding: 0; }
   transition: color .15s, border-color .15s, background .15s;
 }
 .obs-refresh-btn:hover { color: var(--text); border-color: var(--accent); background: var(--surface-2); }
-.obs-card {
+/* === Shared table card shell (observers + nodes) === */
+.data-card {
   background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px;
   overflow: clip; margin-bottom: 20px;
 }
+.data-card .data-table th { border-radius: 0; }
+/* Observers-specific card styles */
 .obs-card .obs-summary { border-bottom: 1px solid var(--border); padding: 12px 16px; margin-bottom: 0; }
 .obs-card .obs-table-scroll { border-radius: 0; }
+/* Nodes table sticky header — th needs top border + radius so card look is preserved when scrolled */
+.nodes-table thead th { border-top: 1px solid var(--border); }
+.nodes-table thead th:first-child { border-top-left-radius: 8px; }
+.nodes-table thead th:last-child { border-top-right-radius: 8px; }
 .obs-summary { display: flex; gap: 20px; flex-wrap: wrap; }
 .obs-stat { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--text-muted); }
 .health-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0; font-size: 0; }
@@ -1294,9 +1305,7 @@ fieldset.mc-section legend.mc-label { padding: 0; }
 .obs-table col.obs-col-uptime  { width: 80px; }
 .obs-table td:first-child { white-space: nowrap; }
 .obs-table td:nth-child(6) { max-width: none; overflow: visible; }
-.obs-sortable { user-select: none; white-space: nowrap; }
-.obs-sortable:hover { color: var(--accent); }
-.obs-sort-active { color: var(--accent); }
+
 .col-observer { min-width: 70px; max-width: none; }
 
 /* === Top Monthly Observers === */
@@ -1625,6 +1634,8 @@ fieldset.mc-section legend.mc-label { padding: 0; }
   .node-filter-wrap { width: 100%; }
 
   /* Nodes */
+  #nodesControls { padding: 0 12px; }
+  #nodesLeft { padding: 0 12px 8px; }
   .nodes-topbar { padding: 10px 12px; }
   .nodes-search { width: 240px; }
   .nodes-search-trigger { flex: 1; width: auto; min-width: 0; }
@@ -1664,12 +1675,13 @@ fieldset.mc-section legend.mc-label { padding: 0; }
 
   /* Page header */
   .page-header { flex-direction: column; align-items: flex-start; gap: 8px; }
+  /* Packets page header stays as a row so "updated X ago" stays inline with the title */
+  .pkt-page-header { flex-direction: row; align-items: center; gap: 0; }
 
   /* Packets search bar: search trigger stretches, pills show icon only */
   .pkt-search-trigger { flex: 1; width: auto; min-width: 0; }
   .pkt-search-trigger-kbd { display: none; }
   .pkt-pill-text { display: none; }
-  .pkt-density-label { display: none; }
   .pkt-byop-pill { padding: 6px 10px; gap: 0; }
   .pkt-filter-badge { margin-left: 2px; }
 }
@@ -3075,11 +3087,22 @@ tr[data-hops]:hover { background: rgba(59,130,246,0.1); }
   .data-table { min-width: 480px; }
 }
 
-/* Table sorting indicators */
-th[data-sort-key] { cursor: pointer; user-select: none; }
-th[data-sort-key]:hover { background: var(--hover-bg, rgba(255,255,255,0.05)); }
-th.sort-active { color: var(--accent, #60a5fa); }
+/* Table sorting indicators — applies to all tables using data-sort-key */
+.data-table th[data-sort-key] { cursor: pointer; user-select: none; }
+.data-table th[data-sort-key]:hover { color: var(--accent); }
 .sort-arrow { font-size: 0.75em; opacity: 0.8; }
+
+/* === Copy-to-clipboard cells === */
+[data-copy] { cursor: copy; }
+[data-copy]:hover { color: var(--accent); }
+.copy-toast {
+  position: fixed; z-index: 99999; pointer-events: none;
+  background: var(--surface-1); color: var(--text);
+  border: 1px solid var(--border); border-radius: 4px;
+  padding: 3px 9px; font-size: 12px; font-family: var(--font);
+  box-shadow: 0 2px 8px rgba(0,0,0,.25);
+  opacity: 1; transition: opacity .25s;
+}
 
 /* ============================================================
    RESPONSIVE — Global improvements (mobile / tablet / PC)

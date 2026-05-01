@@ -1262,6 +1262,17 @@ func (s *Server) handleNodePaths(w http.ResponseWriter, r *http.Request) {
 		prefix1 = prefix1[:2]
 	}
 
+	// Determine the target node's confirmed hash size before acquiring RLock,
+	// so we can skip prefix lookups that can't possibly match.
+	// GetNodeHashSizeInfo is called outside the RLock to avoid reentrancy with s.mu.
+	targetHashBytes := 0
+	{
+		hashInfo := s.store.GetNodeHashSizeInfo()
+		if hi, ok := hashInfo[lowerPK]; ok && !hi.Inconsistent && hi.HashSize > 0 {
+			targetHashBytes = hi.HashSize
+		}
+	}
+
 	s.store.mu.RLock()
 	_, pm := s.store.getCachedNodesAndPM()
 
@@ -1277,27 +1288,102 @@ func (s *Server) handleNodePaths(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	addCandidates(lowerPK) // full pubkey match (from resolved_path)
-	addCandidates(prefix1) // 2-char raw hop match
-	addCandidates(prefix2) // 4-char raw hop match
-	// Also check any raw hops that start with prefix2 (longer prefixes).
-	// Raw hops are typically 2 chars, so iterate only keys with HasPrefix
-	// on the small set of index keys rather than all packets.
-	for key := range s.store.byPathHop {
-		if len(key) > 4 && len(key) < len(lowerPK) && strings.HasPrefix(key, prefix2) {
-			addCandidates(key)
+	// Use confirmed hash size to narrow raw-hop lookups; fall back to all
+	// prefix lengths when hash size is unknown or inconsistent.
+	switch targetHashBytes {
+	case 1:
+		addCandidates(prefix1)
+	case 2:
+		addCandidates(prefix2)
+	case 3:
+		prefix3 := lowerPK
+		if len(prefix3) > 6 {
+			prefix3 = prefix3[:6]
+		}
+		addCandidates(prefix3)
+	default:
+		// Unknown hash size: try all prefix lengths (original behaviour).
+		addCandidates(prefix1) // 2-char (1-byte) raw hop
+		addCandidates(prefix2) // 4-char (2-byte) raw hop
+		for key := range s.store.byPathHop {
+			if len(key) > 4 && len(key) < len(lowerPK) && strings.HasPrefix(key, prefix2) {
+				addCandidates(key)
+			}
 		}
 	}
 
-	// Post-filter: verify target node actually appears in each candidate's resolved_path.
+	// Post-filter 1: verify target node actually appears in each candidate's resolved_path.
 	// The byPathHop index uses short prefixes which can collide (e.g. "c0" matches multiple nodes).
 	// We lean on resolved_path (from neighbor affinity graph) to disambiguate.
+	//
+	// For packets without resolved_path ("!hasAny" fallback), we can only safely include them
+	// when the target's prefix is unambiguous — i.e., no other node shares the same prefix
+	// and hash size. If multiple same-hash-size nodes share the prefix (e.g. VE7KOD and ArunaBot
+	// both use 1-byte hashes starting with "44"), we can't attribute no-resolved-path packets
+	// to either node and must exclude them to avoid showing incorrect paths.
+	prefixIsAmbiguous := false
+	if targetHashBytes > 0 {
+		rawPfx := lowerPK
+		if len(rawPfx) > targetHashBytes*2 {
+			rawPfx = rawPfx[:targetHashBytes*2]
+		}
+		pfxCandidates := pm.m[rawPfx]
+		ambigCount := 0
+		for _, c := range pfxCandidates {
+			if c.HashSize == 0 || c.HashSize == targetHashBytes {
+				ambigCount++
+			}
+		}
+		prefixIsAmbiguous = ambigCount > 1
+	}
 	filtered := candidates[:0] // reuse backing array
 	for _, tx := range candidates {
-		if nodeInResolvedPath(tx, lowerPK) {
-			filtered = append(filtered, tx)
+		// Only check the BEST observation's resolved_path (tx.ResolvedPath), not secondary
+		// observations. A packet where the best observation resolves "44" to ArunaBot should
+		// not appear in VE7KOD Repeater's paths just because some other observer resolved it
+		// differently — the display path comes from the best observation.
+		bestHasResolved := tx.ResolvedPath != nil && len(tx.ResolvedPath) > 0
+		if bestHasResolved {
+			found := false
+			for _, rp := range tx.ResolvedPath {
+				if rp != nil && strings.ToLower(*rp) == lowerPK {
+					found = true
+					break
+				}
+			}
+			if !found {
+				continue
+			}
+		} else {
+			// No resolved_path on best observation: fall back to ambiguity check.
+			// For ambiguous prefixes, exclude — can't safely attribute without disambiguation.
+			if prefixIsAmbiguous {
+				continue
+			}
 		}
+		filtered = append(filtered, tx)
 	}
 	candidates = filtered
+
+	// Post-filter 2: when hash size is confirmed, verify the raw path_json contains
+	// a hop of the correct byte length. This rejects packets where resolved_path was
+	// stale/incorrect (e.g. D2 misattributed to a 3-byte node like KOD Little Mountain).
+	if targetHashBytes > 0 && len(candidates) > 0 {
+		hopLen := targetHashBytes * 2
+		targetRawPrefix := lowerPK
+		if len(targetRawPrefix) > hopLen {
+			targetRawPrefix = targetRawPrefix[:hopLen]
+		}
+		verified := candidates[:0]
+		for _, tx := range candidates {
+			if txHasRawHopPrefix(tx, hopLen, targetRawPrefix) {
+				verified = append(verified, tx)
+			}
+		}
+		if len(verified) > 0 {
+			candidates = verified
+		}
+	}
 
 	type pathAgg struct {
 		Hops       []PathHopResp
@@ -1316,13 +1402,36 @@ func (s *Server) handleNodePaths(w http.ResponseWriter, r *http.Request) {
 		hopCache[hop] = r
 		return r
 	}
+	// lookupByPubkey returns node info for a full pubkey using the pubkeyIdx.
+	lookupByPubkey := func(pk string) *nodeInfo {
+		pk = strings.ToLower(pk)
+		if cached, ok := hopCache[pk]; ok {
+			return cached
+		}
+		infos := pm.m[pk]
+		var r *nodeInfo
+		if len(infos) == 1 {
+			r = &infos[0]
+		}
+		hopCache[pk] = r
+		return r
+	}
 	for _, tx := range candidates {
 		totalTransmissions++
 		hops := txGetParsedPath(tx)
 		resolvedHops := make([]PathHopResp, len(hops))
 		sigParts := make([]string, len(hops))
 		for i, hop := range hops {
-			resolved := resolveHop(hop)
+			// Prefer resolved_path pubkey (stored from when the packet was received
+			// with full context) over re-resolving independently without context.
+			// This avoids ambiguous short-prefix hops resolving to the wrong node.
+			var resolved *nodeInfo
+			if i < len(tx.ResolvedPath) && tx.ResolvedPath[i] != nil {
+				resolved = lookupByPubkey(*tx.ResolvedPath[i])
+			}
+			if resolved == nil {
+				resolved = resolveHop(hop)
+			}
 			entry := PathHopResp{Prefix: hop, Name: hop}
 			if resolved != nil {
 				entry.Name = resolved.Name

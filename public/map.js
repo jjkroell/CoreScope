@@ -831,7 +831,7 @@
     const lastSeen = obs.last_seen ? timeAgo(obs.last_seen) : '—';
     const packets = (obs.packet_count || 0).toLocaleString();
     const loc = `${obs.lat.toFixed(5)}, ${obs.lon.toFixed(5)}`;
-    const roleBadge = `<span style="display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;background:${ROLE_COLORS.observer};color:#fff;">OBSERVER</span>`;
+    const roleBadge = `<span class="badge" style="background:${ROLE_COLORS.observer}20;color:${ROLE_COLORS.observer}">observer</span>`;
 
     return `
       <div class="map-popup" style="font-family:var(--font);min-width:180px;">
@@ -908,7 +908,7 @@
     const key = node.public_key ? formatPubKey(node.public_key, node.hash_size, 16) : '—';
     const loc = (node.lat && node.lon) ? `${node.lat.toFixed(5)}, ${node.lon.toFixed(5)}` : '—';
     const lastAdvert = node.last_seen ? timeAgo(node.last_seen) : '—';
-    const roleBadge = `<span style="display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;background:${ROLE_COLORS[node.role] || '#4b5563'};color:#fff;">${(node.role || 'unknown').toUpperCase()}</span>`;
+    const roleBadge = `<span class="badge" style="background:${(ROLE_COLORS[node.role] || '#6b7280')}20;color:${ROLE_COLORS[node.role] || '#6b7280'}">${node.role || 'unknown'}</span>`;
 
     return `
       <div class="map-popup" style="font-family:var(--font);min-width:180px;">

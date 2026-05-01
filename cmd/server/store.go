@@ -2191,6 +2191,52 @@ func nodeInResolvedPath(tx *StoreTx, targetPK string) bool {
 	return !hasAny
 }
 
+// txHasRawHopPrefix checks whether any path_json for this transmission contains
+// a hop of exactly hopLen hex chars that starts with the given lowercase prefix.
+// Used to verify that a candidate actually has the correct-length raw hop for
+// a node with a known hash size, filtering out stale resolved_path false positives.
+func txHasRawHopPrefix(tx *StoreTx, hopLen int, prefix string) bool {
+	checkHops := func(pathJSON string) bool {
+		if pathJSON == "" || pathJSON == "[]" {
+			return false
+		}
+		var hops []string
+		if json.Unmarshal([]byte(pathJSON), &hops) != nil {
+			return false
+		}
+		for _, h := range hops {
+			if len(h) == hopLen && strings.ToLower(h) == prefix {
+				return true
+			}
+		}
+		return false
+	}
+	if checkHops(tx.PathJSON) {
+		return true
+	}
+	for _, obs := range tx.Observations {
+		if checkHops(obs.PathJSON) {
+			return true
+		}
+	}
+	return false
+}
+
+// txHasResolvedPath returns true if any observation on this transmission has
+// a non-nil, non-empty resolved_path. Used to distinguish packets that were
+// disambiguated at ingest time from older data that predates resolved_path.
+func txHasResolvedPath(tx *StoreTx) bool {
+	if tx.ResolvedPath != nil && len(tx.ResolvedPath) > 0 {
+		return true
+	}
+	for _, obs := range tx.Observations {
+		if obs.ResolvedPath != nil && len(obs.ResolvedPath) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // txGetParsedPath returns cached parsed path hops, parsing on first call.
 func txGetParsedPath(tx *StoreTx) []string {
 	if tx.pathParsed {
@@ -3913,6 +3959,7 @@ type nodeInfo struct {
 	Lat       float64
 	Lon       float64
 	HasGPS    bool
+	HashSize  int // confirmed hash size in bytes (1/2/3); 0 = unknown
 }
 
 func (s *PacketStore) getAllNodes() []nodeInfo {
@@ -3947,9 +3994,16 @@ type prefixMap struct {
 // entries to ~7×N (+ 1 full-key entry per node for exact-match lookups).
 const maxPrefixLen = 8
 
-func buildPrefixMap(nodes []nodeInfo) *prefixMap {
+func buildPrefixMap(nodes []nodeInfo, hashInfo map[string]*hashSizeNodeInfo) *prefixMap {
 	pm := &prefixMap{m: make(map[string][]nodeInfo, len(nodes)*(maxPrefixLen+1))}
-	for _, n := range nodes {
+	for i, n := range nodes {
+		// Enrich with confirmed hash size if available and stable.
+		if hashInfo != nil {
+			if hi, ok := hashInfo[n.PublicKey]; ok && !hi.Inconsistent && hi.HashSize > 0 {
+				nodes[i].HashSize = hi.HashSize
+				n = nodes[i]
+			}
+		}
 		pk := strings.ToLower(n.PublicKey)
 		maxLen := maxPrefixLen
 		if maxLen > len(pk) {
@@ -3967,6 +4021,16 @@ func buildPrefixMap(nodes []nodeInfo) *prefixMap {
 	return pm
 }
 
+// getHashSizeInfoCached returns the cached hash size map without triggering
+// a recompute. Returns nil if the cache has not been populated yet.
+// Safe to call while holding s.mu (no reentrancy risk).
+func (s *PacketStore) getHashSizeInfoCached() map[string]*hashSizeNodeInfo {
+	s.hashSizeInfoMu.Lock()
+	cached := s.hashSizeInfoCache
+	s.hashSizeInfoMu.Unlock()
+	return cached
+}
+
 // getCachedNodesAndPM returns cached node list and prefix map, rebuilding if stale.
 // Must be called with s.mu held (RLock or Lock).
 func (s *PacketStore) getCachedNodesAndPM() ([]nodeInfo, *prefixMap) {
@@ -3979,7 +4043,10 @@ func (s *PacketStore) getCachedNodesAndPM() ([]nodeInfo, *prefixMap) {
 	s.cacheMu.Unlock()
 
 	nodes := s.getAllNodes()
-	pm := buildPrefixMap(nodes)
+	// Use cached hash sizes if available; safe to call while s.mu is held
+	// since getHashSizeInfoCached only acquires hashSizeInfoMu (no reentrancy).
+	hashInfo := s.getHashSizeInfoCached()
+	pm := buildPrefixMap(nodes, hashInfo)
 
 	s.cacheMu.Lock()
 	s.nodeCache = nodes
@@ -4031,6 +4098,26 @@ func (pm *prefixMap) resolveWithContext(hop string, contextPubkeys []string, gra
 	if len(candidates) == 0 {
 		return nil, "no_match", 0
 	}
+
+	// Priority 0: Hash size filter.
+	// MeshCore path hops are 2/4/6 hex chars (1/2/3-byte hash IDs). If a candidate
+	// has a confirmed, stable hash size that doesn't match this hop's byte length,
+	// it cannot be the node that appended this hop — exclude it.
+	// This resolves collisions like D2 (VA7DDU, 1-byte) vs D2A4E2 (KOD Little
+	// Mountain, 3-byte) where both share the same 2-char prefix.
+	hopBytes := len(hop) / 2
+	if hopBytes >= 1 && hopBytes <= 3 {
+		var filtered []nodeInfo
+		for _, c := range candidates {
+			if c.HashSize == 0 || c.HashSize == hopBytes {
+				filtered = append(filtered, c)
+			}
+		}
+		if len(filtered) > 0 && len(filtered) < len(candidates) {
+			candidates = filtered
+		}
+	}
+
 	if len(candidates) == 1 {
 		return &candidates[0], "unique_prefix", 1.0
 	}

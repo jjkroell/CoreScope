@@ -44,6 +44,8 @@
   let _packetSortDirection = 'desc';
   const showHexHashes = true;
   var _pendingUrlRegion = null;
+  let _lastFetchTime = 0;
+  let _lastUpdatedInterval = null;
 
   var DEFAULT_TIME_WINDOW = 15;
 
@@ -143,7 +145,9 @@
       overlay.style.display = 'none';
     }
     selectedId = null;
-    location.hash = '/packets';
+    const dest = _returnToHash || '/packets';
+    _returnToHash = null;
+    location.hash = dest;
     _popPktMobileBack();
   }
 
@@ -313,6 +317,9 @@
 
   let directObsId = null;
 
+  // When navigating here from another page (e.g. channels), remember where to return on close.
+  let _returnToHash = null;
+
   // Mobile back-gesture state (history.pushState approach, same as channels.js)
   let _pktMobileNavPushed = false;
   let _pktSkipNextPopstate = false;
@@ -394,6 +401,8 @@
     }
     var _urlRegion = _initUrlParams.get('region');
     if (_urlRegion) _pendingUrlRegion = _urlRegion;
+    var _urlReturnTo = _initUrlParams.get('returnTo');
+    if (_urlReturnTo) _returnToHash = _urlReturnTo;
 
     app.innerHTML = `<div class="pkt-full-layout">
       <div class="panel-left" id="pktLeft" aria-live="polite" aria-relevant="additions removals"></div>
@@ -427,7 +436,9 @@
       if (detailOverlay && detailOverlay.style.display !== 'none') {
         detailOverlay.style.display = 'none';
         selectedId = null;
-        location.hash = '/packets';
+        const dest = _returnToHash || '/packets';
+        _returnToHash = null;
+        location.hash = dest;
       } else if (filtersOverlay && filtersOverlay.style.display !== 'none') {
         filtersOverlay.style.display = 'none';
         filtersOverlay.setAttribute('aria-hidden', 'true');
@@ -473,14 +484,6 @@
       if (!btn) return;
       if (btn.dataset.action === 'pkt-refresh') loadPackets();
       else if (btn.dataset.action === 'pkt-byop') showBYOP();
-      else if (btn.dataset.action === 'pkt-density') {
-        const compact = document.getElementById('pktTable').classList.toggle('pkt-compact');
-        localStorage.setItem('pkt-density', compact ? 'compact' : 'comfortable');
-        const label = document.querySelector('.pkt-density-label');
-        if (label) label.textContent = compact ? ' Comfortable' : ' Compact';
-        const densityBtn = document.getElementById('pktDensityBtn');
-        if (densityBtn) densityBtn.setAttribute('aria-pressed', compact);
-      }
       else if (btn.dataset.action === 'pkt-pause') {
         packetsPaused = !packetsPaused;
         const pauseBtn = document.getElementById('pktPauseBtn');
@@ -499,16 +502,6 @@
         }
       }
     });
-
-    // Restore density preference
-    if (localStorage.getItem('pkt-density') === 'compact') {
-      const tbl = document.getElementById('pktTable');
-      if (tbl) tbl.classList.add('pkt-compact');
-      const label = document.querySelector('.pkt-density-label');
-      if (label) label.textContent = ' Comfortable';
-      const densityBtn = document.getElementById('pktDensityBtn');
-      if (densityBtn) densityBtn.setAttribute('aria-pressed', 'true');
-    }
 
     // If linked directly to a packet by ID, load its detail and filter list
     if (directPacketId) {
@@ -642,6 +635,7 @@
 
   function destroy() {
     clearTimeout(_renderTimer);
+    if (_lastUpdatedInterval) { clearInterval(_lastUpdatedInterval); _lastUpdatedInterval = null; }
     if (wsHandler) offWS(wsHandler);
     wsHandler = null;
     if (_tableSortInstance) { _tableSortInstance.destroy(); _tableSortInstance = null; }
@@ -663,6 +657,7 @@
     const _resizeHandle = document.getElementById('pktResizeHandle');
     if (_resizeHandle?._cleanupResize) { _resizeHandle._cleanupResize(); delete _resizeHandle._cleanupResize; }
     _pktMobileNavPushed = false;
+    _returnToHash = null;
     removeAllByopOverlays();
     packets = [];
     hashIndex = new Map();    selectedId = null;
@@ -686,6 +681,13 @@
       observers = data.observers || [];
       observerMap = new Map(observers.map(o => [o.id, o]));
     } catch {}
+  }
+
+  function updateLastUpdatedDisplay() {
+    const el = document.getElementById('pktLastUpdated');
+    if (!el || !_lastFetchTime) return;
+    const s = Math.floor((Date.now() - _lastFetchTime) / 1000);
+    el.textContent = s < 5 ? 'updated just now' : 'updated ' + timeAgo(new Date(_lastFetchTime).toISOString());
   }
 
   async function loadPackets() {
@@ -778,7 +780,9 @@
       }
 
       sortPacketsArray();
+      _lastFetchTime = Date.now();
       renderLeft();
+      updateLastUpdatedDisplay();
     } catch (e) {
       console.error('Failed to load packets:', e);
       const tbody = document.getElementById('pktBody');
@@ -801,6 +805,7 @@
       <div class="pkt-sticky-top" id="pktStickyTop">
         <div class="page-header pkt-page-header">
           <h2>Latest Packets <span class="count">(${totalCount})</span></h2>
+          <span class="pkt-last-updated" id="pktLastUpdated"></span>
         </div>
         <div class="pkt-search-bar">
           <button class="pkt-search-trigger" id="pktSearchTrigger" aria-label="Search packets" aria-haspopup="dialog">
@@ -816,10 +821,6 @@
           </button>
           <button class="pkt-byop-pill pkt-pause-btn" id="pktPauseBtn" data-action="pkt-pause" data-tooltip="Pause live updates" aria-pressed="false">
             ⏸<span class="pkt-pill-text"> Pause</span>
-          </button>
-          <button class="pkt-byop-pill pkt-density-btn" id="pktDensityBtn" data-action="pkt-density" data-tooltip="Toggle row density" aria-pressed="false">
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>
-            <span class="pkt-pill-text pkt-density-label"> Compact</span>
           </button>
         </div>
       </div>
@@ -951,6 +952,10 @@
         document.getElementById('pktLeft')?.style.setProperty('--pkt-sticky-h', h + 'px');
       }
     });
+
+    // Start "last updated" ticker
+    if (_lastUpdatedInterval) clearInterval(_lastUpdatedInterval);
+    _lastUpdatedInterval = setInterval(updateLastUpdatedDisplay, 10000);
 
     // Init shared RegionFilter component
     RegionFilter.init(document.getElementById('packetsRegionFilter'), { dropdown: true });
@@ -1667,7 +1672,7 @@
           <td class="pkt-expand-cell">${isSingle ? '' : `<span class="pkt-chevron${isExpanded ? ' expanded' : ''}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>`}</td>
           <td class="col-region">${groupRegion || '—'}</td>
           <td class="col-time">${renderTimestampCell(p.latest)}</td>
-          <td class="mono col-hash">${midTruncate(p.hash || '—', 4)}</td>
+          <td class="mono col-hash"${p.hash ? ` data-copy="${p.hash}" data-tooltip="Click to copy hash"` : ''}>${midTruncate(p.hash || '—', 4)}</td>
           <td class="col-size">${groupSize ? groupSize + 'B' : '—'}</td>
           <td class="col-type">${p.payload_type != null ? `<span class="badge badge-${groupTypeClass}">${groupTypeName}</span>${transportBadge(p.route_type)}` : '—'}</td>
           <td class="col-observer">${truncate(obsNameOnly(headerObserverId), 25)}</td>
@@ -1691,7 +1696,7 @@
         html += `<tr class="group-child" data-id="${c.id}" data-hash="${c.hash || ''}" data-action="select-observation" data-value="${c.id}" data-parent-hash="${p.hash}" data-entry-idx="${entryIdx}" tabindex="0" role="row">
               <td></td><td class="col-region">${childRegion || '—'}</td>
               <td class="col-time">${renderTimestampCell(c.timestamp)}</td>
-              <td class="mono col-hash">${midTruncate(c.hash || '', 4)}</td>
+              <td class="mono col-hash"${c.hash ? ` data-copy="${c.hash}" data-tooltip="Click to copy hash"` : ''}>${midTruncate(c.hash || '', 4)}</td>
               <td class="col-size">${size}B</td>
               <td class="col-type"><span class="badge badge-${typeClass}">${typeName}</span>${transportBadge(c.route_type)}</td>
               <td class="col-observer">${truncate(obsNameOnly(c.observer_id), 25)}</td>
@@ -1720,7 +1725,7 @@
     return `<tr data-id="${p.id}" data-hash="${p.hash || ''}" data-action="select-hash" data-value="${p.hash || p.id}" data-entry-idx="${entryIdx}" tabindex="0" role="row" class="${selectedId === p.id ? 'selected' : ''}"${_chanStyle ? ' style="' + _chanStyle + '"' : ''}>
         <td></td><td class="col-region">${region || '—'}</td>
         <td class="col-time">${renderTimestampCell(p.timestamp)}</td>
-        <td class="mono col-hash">${midTruncate(p.hash || String(p.id), 4)}</td>
+        <td class="mono col-hash"${p.hash ? ` data-copy="${p.hash}" data-tooltip="Click to copy hash"` : ''}>${midTruncate(p.hash || String(p.id), 4)}</td>
         <td class="col-size">${size}B</td>
         <td class="col-type"><span class="badge badge-${typeClass}">${typeName}</span>${transportBadge(p.route_type)}</td>
         <td class="col-observer">${truncate(obsNameOnly(p.observer_id), 25)}</td>

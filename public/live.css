@@ -39,6 +39,13 @@
   color: var(--text-muted);
   padding-left: 2px;
 }
+.feed-oldest-age {
+  font-size: 9px;
+  color: var(--text-muted);
+  opacity: 0.65;
+  margin-left: 6px;
+  flex: 1;
+}
 
 /* ---- Panel content (scrollable) ---- */
 .panel-content {
@@ -140,10 +147,11 @@
 
 /* ---- Node Detail Panel ---- */
 .live-node-detail {
-  top: 60px;
+  top: 164px;
   right: 12px;
-  width: 320px;
-  max-height: calc(100vh - 140px);
+  left: auto;
+  width: 280px;
+  height: 360px;
   background: color-mix(in srgb, var(--surface-1) 95%, transparent);
   backdrop-filter: blur(12px);
   border-radius: 10px;
@@ -152,9 +160,22 @@
   transition: transform 0.2s ease, opacity 0.2s ease;
 }
 .live-node-detail.hidden {
-  transform: translateX(340px);
+  transform: translateX(310px);
   opacity: 0;
   pointer-events: none;
+}
+
+/* On desktop the position is fixed — lock position and hide corner-move button */
+@media (min-width: 769px) {
+  #liveNodeDetail { top: 164px !important; right: 12px !important; left: auto !important; bottom: auto !important; }
+  .live-node-detail .panel-corner-btn { display: none; }
+}
+
+/* ---- Node detail hero (anchored name + role) ---- */
+.node-detail-hero {
+  flex-shrink: 0;
+  padding: 10px 14px 10px;
+  border-bottom: 1px solid var(--border);
 }
 
 /* ---- Feed ---- */

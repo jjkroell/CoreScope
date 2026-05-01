@@ -353,22 +353,41 @@ func handleMessage(store *Store, tag string, source MQTTSource, m mqtt.Message, 
 			if !NodePassesGeoFilter(decoded.Payload.Lat, decoded.Payload.Lon, geoFilter) {
 				return
 			}
+			// Corruption guard: if this public key is new but looks like a
+			// bit-flipped version of an existing node with the same name,
+			// drop the node upsert (but still record the packet transmission).
+			incomingKey := strings.ToLower(decoded.Payload.PubKey)
+			if decoded.Payload.Name != "" {
+				existingKeys, kerr := store.NodeKeysByName(decoded.Payload.Name)
+				if kerr == nil {
+					for _, ek := range existingKeys {
+						if strings.ToLower(ek) != incomingKey && PubKeyCorruptionMatch(incomingKey, strings.ToLower(ek)) {
+							log.Printf("MQTT [%s] suppressing ghost node: ADVERT key %s looks like corrupted version of %s (name=%q)",
+								tag, incomingKey[:16]+"…", ek[:16]+"…", decoded.Payload.Name)
+							decoded.Payload.PubKey = "" // prevent node upsert below
+							break
+						}
+					}
+				}
+			}
 			pktData := BuildPacketData(mqttMsg, decoded, observerID, region)
 			isNew, err := store.InsertTransmission(pktData)
 			if err != nil {
 				log.Printf("MQTT [%s] db insert error: %v", tag, err)
 			}
 			role := advertRole(decoded.Payload.Flags)
-			if err := store.UpsertNode(decoded.Payload.PubKey, decoded.Payload.Name, role, decoded.Payload.Lat, decoded.Payload.Lon, pktData.Timestamp); err != nil {
-				log.Printf("MQTT [%s] node upsert error: %v", tag, err)
+			if decoded.Payload.PubKey != "" {
+				if err := store.UpsertNode(decoded.Payload.PubKey, decoded.Payload.Name, role, decoded.Payload.Lat, decoded.Payload.Lon, pktData.Timestamp); err != nil {
+					log.Printf("MQTT [%s] node upsert error: %v", tag, err)
+				}
 			}
-			if isNew {
+			if decoded.Payload.PubKey != "" && isNew {
 				if err := store.IncrementAdvertCount(decoded.Payload.PubKey); err != nil {
 					log.Printf("MQTT [%s] advert count error: %v", tag, err)
 				}
 			}
 			// Update telemetry if present in advert
-			if decoded.Payload.BatteryMv != nil || decoded.Payload.TemperatureC != nil {
+			if decoded.Payload.PubKey != "" && (decoded.Payload.BatteryMv != nil || decoded.Payload.TemperatureC != nil) {
 				if err := store.UpdateNodeTelemetry(decoded.Payload.PubKey, decoded.Payload.BatteryMv, decoded.Payload.TemperatureC); err != nil {
 					log.Printf("MQTT [%s] node telemetry update error: %v", tag, err)
 				}

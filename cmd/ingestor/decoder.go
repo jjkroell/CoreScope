@@ -747,3 +747,27 @@ func epochToISO(epoch uint32) string {
 	t := unixTime(int64(epoch))
 	return t.UTC().Format("2006-01-02T15:04:05.000Z")
 }
+
+// PubKeyCorruptionMatch reports whether incomingKey looks like a bit-corrupted
+// version of existingKey. Both must be lowercase hex strings of the same length.
+// Returns true (likely corruption) when ≥ 75% of decoded bytes match — i.e.
+// at most 25% of bytes differ. For 32-byte (64-char) keys that means ≤ 8 bytes
+// different. The probability of two unrelated random 256-bit keys meeting this
+// threshold by chance is effectively zero.
+func PubKeyCorruptionMatch(incomingKey, existingKey string) bool {
+	if len(incomingKey) != len(existingKey) || len(incomingKey) < 16 || len(incomingKey)%2 != 0 {
+		return false
+	}
+	nBytes := len(incomingKey) / 2
+	maxDiff := nBytes / 4 // 25% threshold
+	diffCount := 0
+	for i := 0; i < len(incomingKey); i += 2 {
+		if incomingKey[i] != existingKey[i] || incomingKey[i+1] != existingKey[i+1] {
+			diffCount++
+			if diffCount > maxDiff {
+				return false
+			}
+		}
+	}
+	return diffCount > 0 // must differ at least somewhere (not the same key)
+}

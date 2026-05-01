@@ -555,6 +555,29 @@ func (s *Store) UpsertNode(pubKey, name, role string, lat, lon *float64, lastSee
 	return nil
 }
 
+// NodeKeysByName returns all public keys of nodes whose name matches (case-insensitive).
+// Used to detect near-duplicate keys from corrupted ADVERT packets.
+func (s *Store) NodeKeysByName(name string) ([]string, error) {
+	rows, err := s.db.Query(
+		`SELECT public_key FROM nodes WHERE lower(name) = lower(?)
+		 UNION ALL
+		 SELECT public_key FROM inactive_nodes WHERE lower(name) = lower(?)`,
+		name, name,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var keys []string
+	for rows.Next() {
+		var k string
+		if err := rows.Scan(&k); err == nil {
+			keys = append(keys, k)
+		}
+	}
+	return keys, rows.Err()
+}
+
 // IncrementAdvertCount increments advert_count for a node by public key.
 func (s *Store) IncrementAdvertCount(pubKey string) error {
 	_, err := s.stmtIncrementAdvertCount.Exec(pubKey)

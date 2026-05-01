@@ -762,6 +762,33 @@ window.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('click', () => { tip.style.opacity = '0'; });
   })();
 
+  // ── Copy-to-clipboard — global handler for [data-copy] elements ──
+  (function () {
+    let _toastEl = null;
+    function showCopyToast(x, y) {
+      if (_toastEl) { clearTimeout(_toastEl._timer); _toastEl.remove(); }
+      const t = document.createElement('div');
+      t.className = 'copy-toast';
+      t.textContent = 'Copied!';
+      t.style.left = (x + 10) + 'px';
+      t.style.top = (y - 28) + 'px';
+      document.body.appendChild(t);
+      _toastEl = t;
+      t._timer = setTimeout(() => {
+        t.style.opacity = '0';
+        setTimeout(() => { if (t.parentNode) t.remove(); if (_toastEl === t) _toastEl = null; }, 250);
+      }, 900);
+    }
+    document.addEventListener('click', function (e) {
+      const el = e.target.closest('[data-copy]');
+      if (!el || !el.dataset.copy) return;
+      window.copyToClipboard(el.dataset.copy, function () {
+        showCopyToast(e.clientX, e.clientY);
+      });
+    });
+    window.showCopyToast = showCopyToast;
+  })();
+
   // Reposition trace nodes for mobile: dot 1 at start, dot 2 at midpoint
   if (window.matchMedia('(max-width: 767px)').matches) {
     const nodes = document.querySelectorAll('#brandTraceNodes circle');
@@ -1281,7 +1308,7 @@ function makeColumnsResizable(tableSelector, storageKey) {
       _ro.disconnect();
       // Clear handles and inline widths set by this function
       table.querySelectorAll('.col-resize-handle').forEach(h => h.remove());
-      ths.forEach(th => { th.style.width = ''; th.style.position = ''; });
+      ths.forEach(th => { th.style.width = ''; });
       table.style.tableLayout = '';
       table.style.width = '';
       delete table.dataset.resizable;
@@ -1294,7 +1321,6 @@ function makeColumnsResizable(tableSelector, storageKey) {
   // Add resize handles
   ths.forEach((th, i) => {
     if (i === ths.length - 1) return;
-    th.style.position = 'relative';
     const handle = document.createElement('div');
     handle.className = 'col-resize-handle';
     handle.addEventListener('mousedown', (e) => {
