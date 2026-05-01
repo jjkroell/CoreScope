@@ -36,7 +36,7 @@ func ngTestStore(nodes []nodeInfo, packets []*StoreTx) *PacketStore {
 		spIndex:        make(map[string]int),
 	}
 	ps.nodeCache = nodes
-	ps.nodePM = buildPrefixMap(nodes)
+	ps.nodePM = buildPrefixMap(nodes, nil)
 	ps.nodeCacheTime = time.Now().Add(1 * time.Hour)
 	return ps
 }

@@ -764,7 +764,7 @@ func TestPrefixMapResolve(t *testing.T) {
 		{PublicKey: "aabbccdd55667788", Name: "NodeB", HasGPS: false},
 		{PublicKey: "eeff0011aabbccdd", Name: "NodeC", HasGPS: true, Lat: 38.0, Lon: -121.0},
 	}
-	pm := buildPrefixMap(nodes)
+	pm := buildPrefixMap(nodes, nil)
 
 	t.Run("exact match", func(t *testing.T) {
 		n := pm.resolve("aabbccdd11223344")
@@ -805,7 +805,7 @@ func TestPrefixMapResolve(t *testing.T) {
 			{PublicKey: "aa11bb22", Name: "X", HasGPS: false},
 			{PublicKey: "aa11cc33", Name: "Y", HasGPS: false},
 		}
-		pm2 := buildPrefixMap(noGPSNodes)
+		pm2 := buildPrefixMap(noGPSNodes, nil)
 		n := pm2.resolve("aa11")
 		if n == nil {
 			t.Fatal("expected non-nil")
@@ -820,7 +820,7 @@ func TestPrefixMapCap(t *testing.T) {
 		{PublicKey: "aabbccdd11223344", Name: "LongKey"},
 		{PublicKey: "eeff0011", Name: "ShortKey"}, // exactly 8 chars
 	}
-	pm := buildPrefixMap(nodes)
+	pm := buildPrefixMap(nodes, nil)
 
 	t.Run("short prefixes still work", func(t *testing.T) {
 		n := pm.resolve("aabb")

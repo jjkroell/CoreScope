@@ -12,7 +12,7 @@ import (
 func TestResolveWithContext_UniquePrefix(t *testing.T) {
 	pm := buildPrefixMap([]nodeInfo{
 		{PublicKey: "a1b2c3d4", Name: "Node-A", HasGPS: true, Lat: 1, Lon: 2},
-	})
+	}, nil)
 	ni, confidence, _ := pm.resolveWithContext("a1b2c3d4", nil, nil)
 	if ni == nil || ni.Name != "Node-A" {
 		t.Fatal("expected Node-A")
@@ -25,7 +25,7 @@ func TestResolveWithContext_UniquePrefix(t *testing.T) {
 func TestResolveWithContext_NoMatch(t *testing.T) {
 	pm := buildPrefixMap([]nodeInfo{
 		{PublicKey: "a1b2c3d4", Name: "Node-A"},
-	})
+	}, nil)
 	ni, confidence, _ := pm.resolveWithContext("ff", nil, nil)
 	if ni != nil {
 		t.Fatal("expected nil")
@@ -39,7 +39,7 @@ func TestResolveWithContext_AffinityWins(t *testing.T) {
 	pm := buildPrefixMap([]nodeInfo{
 		{PublicKey: "a1aaaaaa", Name: "Node-A1"},
 		{PublicKey: "a1bbbbbb", Name: "Node-A2"},
-	})
+	}, nil)
 
 	graph := NewNeighborGraph()
 	for i := 0; i < 100; i++ {
@@ -63,7 +63,7 @@ func TestResolveWithContext_AffinityTooClose_FallsToGeo(t *testing.T) {
 		{PublicKey: "a1aaaaaa", Name: "Node-A1", HasGPS: true, Lat: 10, Lon: 20},
 		{PublicKey: "a1bbbbbb", Name: "Node-A2", HasGPS: true, Lat: 11, Lon: 21},
 		{PublicKey: "c0c0c0c0", Name: "Ctx", HasGPS: true, Lat: 10.1, Lon: 20.1},
-	})
+	}, nil)
 
 	graph := NewNeighborGraph()
 	for i := 0; i < 50; i++ {
@@ -87,7 +87,7 @@ func TestResolveWithContext_GPSPreference(t *testing.T) {
 	pm := buildPrefixMap([]nodeInfo{
 		{PublicKey: "a1aaaaaa", Name: "NoGPS"},
 		{PublicKey: "a1bbbbbb", Name: "HasGPS", HasGPS: true, Lat: 1, Lon: 2},
-	})
+	}, nil)
 
 	ni, confidence, _ := pm.resolveWithContext("a1", nil, nil)
 	if ni == nil || ni.Name != "HasGPS" {
@@ -102,7 +102,7 @@ func TestResolveWithContext_FirstMatchFallback(t *testing.T) {
 	pm := buildPrefixMap([]nodeInfo{
 		{PublicKey: "a1aaaaaa", Name: "First"},
 		{PublicKey: "a1bbbbbb", Name: "Second"},
-	})
+	}, nil)
 
 	ni, confidence, _ := pm.resolveWithContext("a1", nil, nil)
 	if ni == nil || ni.Name != "First" {
@@ -117,7 +117,7 @@ func TestResolveWithContext_NilGraphFallsToGPS(t *testing.T) {
 	pm := buildPrefixMap([]nodeInfo{
 		{PublicKey: "a1aaaaaa", Name: "NoGPS"},
 		{PublicKey: "a1bbbbbb", Name: "HasGPS", HasGPS: true, Lat: 1, Lon: 2},
-	})
+	}, nil)
 
 	ni, confidence, _ := pm.resolveWithContext("a1", []string{"someone"}, nil)
 	if ni == nil || ni.Name != "HasGPS" {
@@ -133,7 +133,7 @@ func TestResolveWithContext_BackwardCompatResolve(t *testing.T) {
 	pm := buildPrefixMap([]nodeInfo{
 		{PublicKey: "a1aaaaaa", Name: "NoGPS"},
 		{PublicKey: "a1bbbbbb", Name: "HasGPS", HasGPS: true, Lat: 1, Lon: 2},
-	})
+	}, nil)
 	ni := pm.resolve("a1")
 	if ni == nil || ni.Name != "HasGPS" {
 		t.Fatalf("expected HasGPS from resolve(), got %v", ni)

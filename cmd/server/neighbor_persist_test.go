@@ -61,7 +61,7 @@ func TestResolvePathForObs(t *testing.T) {
 		{PublicKey: "aabbccddee1234567890aabbccddee1234567890aabbccddee1234567890aabb", Name: "Node-AA"},
 		{PublicKey: "bbccddee1234567890aabbccddee1234567890aabbccddee1234567890aabb11", Name: "Node-BB"},
 	}
-	pm := buildPrefixMap(nodes)
+	pm := buildPrefixMap(nodes, nil)
 	graph := NewNeighborGraph()
 
 	tx := &StoreTx{
@@ -83,7 +83,7 @@ func TestResolvePathForObs(t *testing.T) {
 }
 
 func TestResolvePathForObs_EmptyPath(t *testing.T) {
-	pm := buildPrefixMap(nil)
+	pm := buildPrefixMap(nil, nil)
 	rp := resolvePathForObs(`[]`, "", &StoreTx{}, pm, nil)
 	if rp != nil {
 		t.Errorf("expected nil for empty path, got %v", rp)
@@ -99,7 +99,7 @@ func TestResolvePathForObs_Unresolvable(t *testing.T) {
 	nodes := []nodeInfo{
 		{PublicKey: "aabbccddee1234567890aabbccddee1234567890aabbccddee1234567890aabb", Name: "Node-AA"},
 	}
-	pm := buildPrefixMap(nodes)
+	pm := buildPrefixMap(nodes, nil)
 
 	// "zz" prefix doesn't match any node
 	rp := resolvePathForObs(`["zz"]`, "", &StoreTx{}, pm, nil)
@@ -462,7 +462,7 @@ func TestExtractEdgesFromObs_WithPath(t *testing.T) {
 		{PublicKey: "aabbccddee1234567890aabbccddee1234567890aabbccddee1234567890aabb", Name: "Node-AA"},
 		{PublicKey: "ffgghhii1234567890aabbccddee1234567890aabbccddee1234567890aabb11", Name: "Node-FF"},
 	}
-	pm := buildPrefixMap(nodes)
+	pm := buildPrefixMap(nodes, nil)
 
 	tx := &StoreTx{
 		DecodedJSON: `{"pubKey":"originator00"}`,
