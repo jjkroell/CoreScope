@@ -33,7 +33,18 @@ async function run() {
     executablePath: process.env.CHROMIUM_PATH || undefined,
     args: ['--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage']
   });
-  const context = await browser.newContext();
+  const context = await browser.newContext({
+    storageState: {
+      cookies: [],
+      origins: [{
+        origin: BASE,
+        localStorage: [
+          // Suppress announcement overlay so it doesn't intercept clicks
+          { name: 'meshcore-announcement-v2', value: '1' }
+        ]
+      }]
+    }
+  });
   const page = await context.newPage();
   page.setDefaultTimeout(10000);
 
