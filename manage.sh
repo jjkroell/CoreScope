@@ -1588,12 +1588,24 @@ cmd_e2e() {
     npx playwright install chromium 2>/dev/null || true
   fi
 
-  # Build the Go server binary
+  # Build the Go server binary — use system go if available, else Docker
   info "Building Go server..."
-  (cd cmd/server && go build -o ../../corescope-server .) || {
-    err "Go build failed. Run './manage.sh test' to check compilation."
-    exit 1
-  }
+  GO_BIN=$(command -v go 2>/dev/null || find _tool/go -name "go" -type f 2>/dev/null | grep "bin/go$" | head -1)
+  if [ -n "$GO_BIN" ]; then
+    (cd cmd/server && "$GO_BIN" build -o ../../corescope-server .) || {
+      err "Go build failed."
+      exit 1
+    }
+  else
+    docker run --rm \
+      -v "$(pwd)":/workspace \
+      -w /workspace \
+      golang:1.22-alpine \
+      sh -c "apk add --no-cache build-base -q && cd cmd/server && go build -o ../../corescope-server ." || {
+      err "Go build failed (via Docker)."
+      exit 1
+    }
+  fi
   log "Server binary built."
 
   # Kill anything on the test port, then start server
