@@ -241,7 +241,7 @@ jobs:
   build-and-publish:
     name: "🏗️ Build & Publish Docker Image"
     needs: [e2e-test]
-    runs-on: [self-hosted, meshcore-runner-2]
+    runs-on: [self-hosted, Linux]
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -283,7 +283,7 @@ jobs:
     name: "🚀 Deploy Staging"
     if: github.event_name == 'push'
     needs: [build-and-publish]
-    runs-on: [self-hosted, meshcore-runner-2]
+    runs-on: [self-hosted, Linux]
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
