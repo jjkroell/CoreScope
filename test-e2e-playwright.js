@@ -1651,9 +1651,12 @@ async function run() {
   // Test: timeWindow change updates URL
   await test('Packets timeWindow change updates URL', async () => {
     await page.goto(BASE + '#/packets', { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#fTimeWindow', { state: 'attached', timeout: 8000 });
+    // #fTimeWindow is inside the filters modal — open it first
+    await page.click('#pktFiltersBtn');
+    await page.waitForSelector('#fTimeWindow', { state: 'visible', timeout: 8000 });
     await page.selectOption('#fTimeWindow', '30');
     await page.waitForTimeout(300);
+    await page.click('#pktFMClose');
     const url = page.url();
     assert(url.includes('timeWindow=30'), `URL should contain timeWindow=30 after change, got: ${url}`);
   });
