@@ -215,11 +215,10 @@ async function run() {
 
   // Test 5: Node detail loads (reuses nodes page from test 2)
   await test('Node detail loads', async () => {
-    await page.waitForSelector('table tbody tr');
-    // Click first row
-    const firstRow = await page.$('table tbody tr');
-    assert(firstRow, 'No node rows found');
-    await firstRow.click();
+    // Wait for rows to settle, then click by selector to avoid stale handle if table re-renders
+    await page.waitForSelector('table tbody tr', { state: 'visible' });
+    await page.waitForTimeout(300);
+    await page.click('table tbody tr:first-child');
     // Wait for detail pane to appear
     await page.waitForSelector('.node-detail');
     const html = await page.content();
