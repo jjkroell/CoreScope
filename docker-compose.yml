@@ -66,9 +66,9 @@ services:
       timeout: 5s
       retries: 5
 
-  prod:
+  master:
     image: corescope:latest
-    container_name: corescope-prod
+    container_name: corescope-master
     restart: unless-stopped
     stop_grace_period: 30s
     stop_signal: SIGTERM
@@ -81,7 +81,7 @@ services:
       - ./caddy-config/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./caddy-config/maintenance.html:/srv/maintenance.html:ro
       - ${PROD_DATA_DIR:-~/meshcore-data}:/app/data
-      - caddy-data-prod:/data/caddy
+      - caddy-data-master:/data/caddy
     environment:
       - NODE_ENV=production
       - MESHCORE_API_KEY=${MESHCORE_API_KEY}
@@ -109,4 +109,4 @@ volumes:
   # Named volumes for Caddy TLS certificates (not user data — managed by Caddy internally)
   mosquitto-data:
   caddy-data-dev:
-  caddy-data-prod:
+  caddy-data-master:
