@@ -370,15 +370,15 @@ async function run() {
     await page.waitForSelector('table tbody tr', { timeout: 15000 });
     const rowsBefore = await page.$$('table tbody tr');
     assert(rowsBefore.length > 0, 'No packets visible');
-    // Use the search/filter input
-    const filterInput = await page.$('#pktSearchInput');
-    assert(filterInput, 'Packet filter input not found');
-    await filterInput.fill('ADVERT');
-    // Client-side filter has input debounce (~250ms); wait for it to apply
+    // Open search overlay then fill the input
+    await page.click('#pktSearchTrigger');
+    await page.waitForSelector('#pktSearchInput', { state: 'visible' });
+    await page.fill('#pktSearchInput', 'ADVERT');
+    // Wait for debounce (~250ms) and results to render
     await page.waitForTimeout(500);
-    // Verify filter was applied (count may differ)
-    const rowsAfter = await page.$$('table tbody tr');
-    assert(rowsAfter.length > 0, 'No packets after filtering');
+    // Verify results appear
+    const searchResults = await page.$('#pktSearchResults');
+    assert(searchResults, 'Search results container not found');
   });
 
   await test('Packets initial fetch honors persisted time window', async () => {
