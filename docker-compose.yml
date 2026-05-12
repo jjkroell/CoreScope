@@ -44,7 +44,7 @@ services:
       umami-db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/u/api/heartbeat"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/heartbeat"]
       interval: 30s
       timeout: 5s
       retries: 5
