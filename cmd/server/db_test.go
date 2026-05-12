@@ -927,7 +927,7 @@ func TestGetNodesFiltering(t *testing.T) {
 	seedTestData(t, db)
 
 	t.Run("role filter", func(t *testing.T) {
-		nodes, total, _, err := db.GetNodes(50, 0, "repeater", "", "", "", "", "")
+		nodes, total, _, err := db.GetNodes(50, 0, "repeater", "", "", "", "", "", "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -940,7 +940,7 @@ func TestGetNodesFiltering(t *testing.T) {
 	})
 
 	t.Run("search filter", func(t *testing.T) {
-		nodes, _, _, err := db.GetNodes(50, 0, "", "Companion", "", "", "", "")
+		nodes, _, _, err := db.GetNodes(50, 0, "", "Companion", "", "", "", "", "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -950,7 +950,7 @@ func TestGetNodesFiltering(t *testing.T) {
 	})
 
 	t.Run("sort by name", func(t *testing.T) {
-		nodes, _, _, err := db.GetNodes(50, 0, "", "", "", "", "name", "")
+		nodes, _, _, err := db.GetNodes(50, 0, "", "", "", "", "name", "", "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -960,7 +960,7 @@ func TestGetNodesFiltering(t *testing.T) {
 	})
 
 	t.Run("sort by packetCount", func(t *testing.T) {
-		nodes, _, _, err := db.GetNodes(50, 0, "", "", "", "", "packetCount", "")
+		nodes, _, _, err := db.GetNodes(50, 0, "", "", "", "", "packetCount", "", "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -970,7 +970,7 @@ func TestGetNodesFiltering(t *testing.T) {
 	})
 
 	t.Run("sort by lastSeen", func(t *testing.T) {
-		nodes, _, _, err := db.GetNodes(50, 0, "", "", "", "", "lastSeen", "")
+		nodes, _, _, err := db.GetNodes(50, 0, "", "", "", "", "lastSeen", "", "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -982,7 +982,7 @@ func TestGetNodesFiltering(t *testing.T) {
 	t.Run("lastHeard filter 30d", func(t *testing.T) {
 		// The filter works by computing since = now - 30d; seed data last_seen may or may not match.
 		// Just verify the filter runs without error.
-		_, _, _, err := db.GetNodes(50, 0, "", "", "", "30d", "", "")
+		_, _, _, err := db.GetNodes(50, 0, "", "", "", "30d", "", "", "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -990,7 +990,7 @@ func TestGetNodesFiltering(t *testing.T) {
 
 	t.Run("lastHeard filter various", func(t *testing.T) {
 		for _, lh := range []string{"1h", "6h", "24h", "7d", "30d", "invalid"} {
-			_, _, _, err := db.GetNodes(50, 0, "", "", "", lh, "", "")
+			_, _, _, err := db.GetNodes(50, 0, "", "", "", lh, "", "", "")
 			if err != nil {
 				t.Fatalf("lastHeard=%s failed: %v", lh, err)
 			}
@@ -998,7 +998,7 @@ func TestGetNodesFiltering(t *testing.T) {
 	})
 
 	t.Run("default limit", func(t *testing.T) {
-		nodes, _, _, err := db.GetNodes(0, 0, "", "", "", "", "", "")
+		nodes, _, _, err := db.GetNodes(0, 0, "", "", "", "", "", "", "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1008,7 +1008,7 @@ func TestGetNodesFiltering(t *testing.T) {
 	})
 
 	t.Run("before filter", func(t *testing.T) {
-		_, total, _, err := db.GetNodes(50, 0, "", "", "2026-01-02T00:00:00Z", "", "", "")
+		_, total, _, err := db.GetNodes(50, 0, "", "", "2026-01-02T00:00:00Z", "", "", "", "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1018,7 +1018,7 @@ func TestGetNodesFiltering(t *testing.T) {
 	})
 
 	t.Run("offset", func(t *testing.T) {
-		nodes, total, _, err := db.GetNodes(1, 1, "", "", "", "", "", "")
+		nodes, total, _, err := db.GetNodes(1, 1, "", "", "", "", "", "", "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1031,7 +1031,7 @@ func TestGetNodesFiltering(t *testing.T) {
 	})
 
 	t.Run("region filter SJC", func(t *testing.T) {
-		nodes, total, _, err := db.GetNodes(50, 0, "", "", "", "", "", "SJC")
+		nodes, total, _, err := db.GetNodes(50, 0, "", "", "", "", "", "SJC", "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1047,7 +1047,7 @@ func TestGetNodesFiltering(t *testing.T) {
 	})
 
 	t.Run("region filter SFO", func(t *testing.T) {
-		_, total, _, err := db.GetNodes(50, 0, "", "", "", "", "", "SFO")
+		_, total, _, err := db.GetNodes(50, 0, "", "", "", "", "", "SFO", "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1057,7 +1057,7 @@ func TestGetNodesFiltering(t *testing.T) {
 	})
 
 	t.Run("region filter multi", func(t *testing.T) {
-		_, total, _, err := db.GetNodes(50, 0, "", "", "", "", "", "SJC,SFO")
+		_, total, _, err := db.GetNodes(50, 0, "", "", "", "", "", "SJC,SFO", "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1067,7 +1067,7 @@ func TestGetNodesFiltering(t *testing.T) {
 	})
 
 	t.Run("region filter unknown", func(t *testing.T) {
-		_, total, _, err := db.GetNodes(50, 0, "", "", "", "", "", "AMS")
+		_, total, _, err := db.GetNodes(50, 0, "", "", "", "", "", "AMS", "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1167,7 +1167,7 @@ func TestGetNodesRegionFilterV2(t *testing.T) {
 		VALUES (1, 'obs-v2-1', 'V2 Observer', 10.0, -90, '[]', ?)`, recentEpoch)
 
 	t.Run("v2 region filter match", func(t *testing.T) {
-		nodes, total, _, err := db.GetNodes(50, 0, "", "", "", "", "", "LAX")
+		nodes, total, _, err := db.GetNodes(50, 0, "", "", "", "", "", "LAX", "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1183,7 +1183,7 @@ func TestGetNodesRegionFilterV2(t *testing.T) {
 	})
 
 	t.Run("v2 region filter no match", func(t *testing.T) {
-		_, total, _, err := db.GetNodes(50, 0, "", "", "", "", "", "JFK")
+		_, total, _, err := db.GetNodes(50, 0, "", "", "", "", "", "JFK", "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1528,7 +1528,7 @@ func TestNodeTelemetryFields(t *testing.T) {
 	}
 
 	// Test via GetNodes
-	nodes, _, _, err := db.GetNodes(50, 0, "sensor", "", "", "", "", "")
+	nodes, _, _, err := db.GetNodes(50, 0, "sensor", "", "", "", "", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
