@@ -51,33 +51,19 @@ async function run() {
     assert(nav, 'Nav bar not found');
   });
 
-  // Test 6: Theme customizer opens (reuses home page from test 1)
-  await test('Theme customizer opens', async () => {
-    // Look for palette/customize button
-    const btn = await page.$('button[title*="ustom" i], button[aria-label*="theme" i], [class*="customize"], button:has-text("\ud83c\udfa8")');
-    if (!btn) {
-      // Try finding by emoji content
-      const allButtons = await page.$$('button');
-      let found = false;
-      for (const b of allButtons) {
-        const text = await b.textContent();
-        if (text.includes('\ud83c\udfa8')) {
-          await b.click();
-          found = true;
-          break;
-        }
-      }
-      assert(found, 'Could not find theme customizer button');
-    } else {
-      await btn.click();
-    }
-    await page.waitForFunction(() => {
-      const html = document.body.innerHTML;
-      return html.includes('preset') || html.includes('Preset') || html.includes('theme') || html.includes('Theme');
-    });
-    const html = await page.content();
-    const hasCustomizer = html.includes('preset') || html.includes('Preset') || html.includes('theme') || html.includes('Theme');
-    assert(hasCustomizer, 'Customizer panel not found after clicking');
+  // Test 6: Theme toggle works (light/dark pills on home page)
+  await test('Theme toggle works', async () => {
+    // Home section renders .theme-opt pills \u2014 wait for them
+    await page.waitForSelector('.theme-opt[data-theme]', { state: 'visible', timeout: 8000 });
+    const before = await page.$eval('html', el => el.getAttribute('data-theme') || 'dark');
+    const target = before === 'dark' ? 'light' : 'dark';
+    await page.click(`.theme-opt[data-theme="${target}"]`);
+    await page.waitForFunction(
+      (expected) => document.documentElement.getAttribute('data-theme') === expected,
+      target, { timeout: 3000 }
+    );
+    const after = await page.$eval('html', el => el.getAttribute('data-theme'));
+    assert(after === target, `Expected theme "${target}" but got "${after}"`);
   });
 
   await test('Customizer open does not overwrite server home config without edits', async () => {
@@ -142,26 +128,17 @@ async function run() {
     assert(persistedHero === editedHero, `Expected persisted hero "${editedHero}" but got "${persistedHero}"`);
   });
 
-  // Test 7: Dark mode toggle (fresh navigation \u2014 customizer panel may be open)
+  // Test 7: Dark mode toggle (fresh navigation)
   await test('Dark mode toggle', async () => {
     await page.goto(BASE, { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('nav, .navbar, .nav, [class*="nav"]');
-    const themeBefore = await page.$eval('html', el => el.getAttribute('data-theme'));
-    // Find toggle button
-    const allButtons = await page.$$('button');
-    let toggled = false;
-    for (const b of allButtons) {
-      const text = await b.textContent();
-      if (text.includes('\u2600') || text.includes('\ud83c\udf19') || text.includes('\ud83c\udf11') || text.includes('\ud83c\udf15')) {
-        await b.click();
-        toggled = true;
-        break;
-      }
-    }
-    assert(toggled, 'Could not find dark mode toggle button');
+    // Wait for home section to render its light/dark pills
+    await page.waitForSelector('.theme-opt[data-theme]', { state: 'visible', timeout: 8000 });
+    const themeBefore = await page.$eval('html', el => el.getAttribute('data-theme') || 'dark');
+    const target = themeBefore === 'dark' ? 'light' : 'dark';
+    await page.click(`.theme-opt[data-theme="${target}"]`);
     await page.waitForFunction(
       (before) => document.documentElement.getAttribute('data-theme') !== before,
-      themeBefore
+      themeBefore, { timeout: 3000 }
     );
     const themeAfter = await page.$eval('html', el => el.getAttribute('data-theme'));
     assert(themeBefore !== themeAfter, `Theme didn't change: before=${themeBefore}, after=${themeAfter}`);
