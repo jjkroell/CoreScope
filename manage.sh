@@ -1551,6 +1551,16 @@ cmd_reset() {
 
 # ─── Help ─────────────────────────────────────────────────────────────────
 
+cmd_test() {
+  log "Running Go test suite via Docker..."
+  docker run --rm \
+    -v "$(pwd)":/workspace \
+    -w /workspace \
+    golang:1.22-alpine \
+    sh -c "apk add --no-cache build-base -q && cd cmd/server && go test ./... && cd ../ingestor && go test ./..."
+  log "All tests passed."
+}
+
 cmd_help() {
   echo ""
   echo "CoreScope — Management Script"
@@ -1575,6 +1585,7 @@ cmd_help() {
   echo "    backup [dir]       Full backup: database + config + theme"
   echo "    restore <d>        Restore from backup dir or .db file"
   echo "    mqtt-test          Check if MQTT data is flowing"
+  echo "    test               Run Go test suite locally via Docker"
   echo ""
   echo "Prod uses docker-compose.yml; staging uses ${STAGING_COMPOSE_FILE}."
   echo ""
@@ -1594,6 +1605,7 @@ case "${1:-help}" in
   backup)    cmd_backup "$2" ;;
   restore)   cmd_restore "$2" ;;
   mqtt-test) cmd_mqtt_test ;;
+  test)      cmd_test ;;
   reset)     cmd_reset ;;
   help|*)    cmd_help ;;
 esac
