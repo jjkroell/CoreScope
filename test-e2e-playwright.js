@@ -412,9 +412,11 @@ async function run() {
   // Test: Packet detail pane hidden on fresh load
   await test('Packets detail pane hidden on fresh load', async () => {
     await page.goto(`${BASE}/#/packets`, { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#pktRight', { state: 'attached' });
-    const isEmpty = await page.$eval('#pktRight', el => el.classList.contains('empty'));
-    assert(isEmpty, 'Detail pane should have "empty" class on fresh load');
+    await page.waitForSelector('#pktDetailOverlay', { state: 'attached', timeout: 10000 });
+    const isHidden = await page.$eval('#pktDetailOverlay', el =>
+      el.style.display === 'none' || el.getAttribute('aria-hidden') === 'true' || !el.classList.contains('open')
+    );
+    assert(isHidden, 'Detail overlay should be hidden on fresh load');
   });
 
   // Test: Packets groupByHash toggle changes view
