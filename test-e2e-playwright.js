@@ -396,7 +396,7 @@ async function run() {
 
     // Full reload on the packets page — scripts re-execute, IIFE reads localStorage
     await page.reload({ waitUntil: 'load' });
-    await page.waitForSelector('#fTimeWindow', { timeout: 10000 });
+    await page.waitForSelector('#fTimeWindow', { state: 'attached', timeout: 10000 });
     const timeWindowValue = await page.$eval('#fTimeWindow', (el) => el.value);
     assert(timeWindowValue === '60', `Expected time window dropdown to restore 60, got ${timeWindowValue}`);
 
