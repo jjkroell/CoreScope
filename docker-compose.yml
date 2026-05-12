@@ -4,39 +4,6 @@
 # This ensures the DB and theme are visible on the host filesystem for backup.
 
 services:
-  prod:
-    build:
-      context: .
-      args:
-        APP_VERSION: ${APP_VERSION:-unknown}
-        GIT_COMMIT: ${GIT_COMMIT:-unknown}
-        BUILD_TIME: ${BUILD_TIME:-unknown}
-    image: corescope:latest
-    container_name: corescope-prod
-    restart: unless-stopped
-    stop_grace_period: 30s
-    stop_signal: SIGTERM
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    ports:
-      - "${PROD_HTTP_PORT:-80}:80"
-      - "${PROD_HTTPS_PORT:-443}:443"
-    volumes:
-      - ./caddy-config/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./caddy-config/maintenance.html:/srv/maintenance.html:ro
-      - ${PROD_DATA_DIR:-~/meshcore-data}:/app/data
-      - caddy-data:/data/caddy
-    environment:
-      - NODE_ENV=production
-      - DISABLE_MOSQUITTO=${DISABLE_MOSQUITTO:-false}
-      - MESHCORE_API_KEY=${MESHCORE_API_KEY}
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/stats"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-
   dev:
     image: corescope:latest
     container_name: corescope-dev
@@ -113,6 +80,5 @@ services:
 
 volumes:
   # Named volumes for Caddy TLS certificates (not user data — managed by Caddy internally)
-  caddy-data:
   mosquitto-data:
   caddy-data-dev:
