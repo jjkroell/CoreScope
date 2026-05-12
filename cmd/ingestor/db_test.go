@@ -182,7 +182,7 @@ func TestUpsertNode(t *testing.T) {
 
 	lat := 37.0
 	lon := -122.0
-	if err := s.UpsertNode("aabbccdd", "TestNode", "repeater", &lat, &lon, "2026-03-25T00:00:00Z"); err != nil {
+	if err := s.UpsertNode("aabbccdd", "TestNode", "repeater", &lat, &lon, "2026-03-25T00:00:00Z", ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -196,7 +196,7 @@ func TestUpsertNode(t *testing.T) {
 	}
 
 	// Upsert again — should update
-	if err := s.UpsertNode("aabbccdd", "UpdatedNode", "repeater", &lat, &lon, "2026-03-25T01:00:00Z"); err != nil {
+	if err := s.UpsertNode("aabbccdd", "UpdatedNode", "repeater", &lat, &lon, "2026-03-25T01:00:00Z", ""); err != nil {
 		t.Fatal(err)
 	}
 	s.db.QueryRow("SELECT name FROM nodes WHERE public_key = 'aabbccdd'").Scan(&name)
@@ -594,7 +594,7 @@ func TestEndToEndIngest(t *testing.T) {
 		ok, _ := ValidateAdvert(&decoded.Payload)
 		if ok {
 			role := advertRole(decoded.Payload.Flags)
-			err := s.UpsertNode(decoded.Payload.PubKey, decoded.Payload.Name, role, decoded.Payload.Lat, decoded.Payload.Lon, pktData.Timestamp)
+			err := s.UpsertNode(decoded.Payload.PubKey, decoded.Payload.Name, role, decoded.Payload.Lat, decoded.Payload.Lon, pktData.Timestamp, "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -856,7 +856,7 @@ func TestUpsertNodeEmptyLastSeen(t *testing.T) {
 	lat := 37.0
 	lon := -122.0
 	// Empty lastSeen → should use current time
-	if err := s.UpsertNode("aabbccdd", "TestNode", "repeater", &lat, &lon, ""); err != nil {
+	if err := s.UpsertNode("aabbccdd", "TestNode", "repeater", &lat, &lon, "", ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1034,7 +1034,7 @@ func TestConcurrentWrites(t *testing.T) {
 				lat := 37.0
 				lon := -122.0
 				pubKey := fmt.Sprintf("node_%d_%d________", gIdx, i)
-				if err := s.UpsertNode(pubKey[:16], "Node", "repeater", &lat, &lon, data.Timestamp); err != nil {
+				if err := s.UpsertNode(pubKey[:16], "Node", "repeater", &lat, &lon, data.Timestamp, ""); err != nil {
 					errCh <- fmt.Errorf("goroutine %d node upsert %d: %w", gIdx, i, err)
 					return
 				}
@@ -1132,7 +1132,7 @@ func TestDBStats(t *testing.T) {
 	// Node upsert
 	lat := 37.0
 	lon := -122.0
-	if err := s.UpsertNode("pk1", "Node1", "repeater", &lat, &lon, "2026-03-28T00:00:00Z"); err != nil {
+	if err := s.UpsertNode("pk1", "Node1", "repeater", &lat, &lon, "2026-03-28T00:00:00Z", ""); err != nil {
 		t.Fatal(err)
 	}
 	if s.Stats.NodeUpserts.Load() != 1 {
@@ -1213,7 +1213,7 @@ func TestLoadTestThroughput(t *testing.T) {
 				lat := 37.0 + float64(gIdx)*0.001
 				lon := -122.0 + float64(i)*0.001
 				pubKey := fmt.Sprintf("node_%04d_%04d____", gIdx, i)
-				if err := s.UpsertNode(pubKey[:16], "Node", "repeater", &lat, &lon, data.Timestamp); err != nil {
+				if err := s.UpsertNode(pubKey[:16], "Node", "repeater", &lat, &lon, data.Timestamp, ""); err != nil {
 					totalErrors.Add(1)
 					if strings.Contains(err.Error(), "locked") || strings.Contains(err.Error(), "BUSY") {
 						busyErrors.Add(1)
@@ -1301,7 +1301,7 @@ func TestUpdateNodeTelemetry(t *testing.T) {
 
 	lat := 37.0
 	lon := -122.0
-	if err := s.UpsertNode("telem1", "TelemetryNode", "sensor", &lat, &lon, "2026-03-25T00:00:00Z"); err != nil {
+	if err := s.UpsertNode("telem1", "TelemetryNode", "sensor", &lat, &lon, "2026-03-25T00:00:00Z", ""); err != nil {
 		t.Fatal(err)
 	}
 
