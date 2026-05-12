@@ -425,29 +425,33 @@ async function run() {
     await page.evaluate(() => localStorage.setItem('meshcore-time-window', '525600'));
     await page.reload({ waitUntil: 'load' });
     await page.waitForSelector('table tbody tr', { timeout: 15000 });
-    const groupBtn = await page.$('#fGroup');
-    assert(groupBtn, 'Group by hash button (#fGroup) not found');
-    // Check initial state (default is grouped/active)
+    // #fGroup is inside the filters modal — open it first
+    await page.click('#pktFiltersBtn');
+    await page.waitForSelector('#fGroup', { state: 'visible' });
     const initialActive = await page.$eval('#fGroup', el => el.classList.contains('active'));
-    // Click to toggle
-    await groupBtn.click();
+    await page.click('#fGroup');
     await page.waitForFunction((wasActive) => {
       const btn = document.getElementById('fGroup');
       return btn && btn.classList.contains('active') !== wasActive;
     }, initialActive, { timeout: 5000 });
     const afterFirst = await page.$eval('#fGroup', el => el.classList.contains('active'));
     assert(afterFirst !== initialActive, 'Group button state should change after click');
-    await page.waitForSelector('table tbody tr');
+    // Close modal, verify rows still present
+    await page.click('#pktFMClose');
+    await page.waitForSelector('table tbody tr', { timeout: 5000 });
     const rows = await page.$$eval('table tbody tr', r => r.length);
     assert(rows > 0, 'Should have rows after toggle');
-    // Click again to toggle back
-    await groupBtn.click();
+    // Re-open and toggle back
+    await page.click('#pktFiltersBtn');
+    await page.waitForSelector('#fGroup', { state: 'visible' });
+    await page.click('#fGroup');
     await page.waitForFunction((prev) => {
       const btn = document.getElementById('fGroup');
       return btn && btn.classList.contains('active') !== prev;
     }, afterFirst, { timeout: 5000 });
     const afterSecond = await page.$eval('#fGroup', el => el.classList.contains('active'));
     assert(afterSecond === initialActive, 'Group button should return to initial state after second click');
+    await page.click('#pktFMClose');
   });
 
   // Test: Clicking a packet row opens detail pane
