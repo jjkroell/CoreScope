@@ -1552,13 +1552,26 @@ cmd_reset() {
 # ─── Help ─────────────────────────────────────────────────────────────────
 
 cmd_test() {
+  local report="test-results.md"
+  local ts; ts=$(date -u +"%Y-%m-%d %H:%M UTC")
   log "Running Go test suite via Docker..."
-  docker run --rm \
+  echo "# Test Results — ${ts}" > "$report"
+  echo "" >> "$report"
+  if docker run --rm \
     -v "$(pwd)":/workspace \
     -w /workspace \
     golang:1.22-alpine \
-    sh -c "apk add --no-cache build-base -q && cd cmd/server && go test ./... && cd ../ingestor && go test ./..."
-  log "All tests passed."
+    sh -c "apk add --no-cache build-base -q && cd cmd/server && go test ./... 2>&1 && cd ../ingestor && go test ./... 2>&1" \
+    >> "$report" 2>&1; then
+    echo "" >> "$report"
+    echo "**✅ All tests passed.**" >> "$report"
+    log "All tests passed. Results written to ${report}"
+  else
+    echo "" >> "$report"
+    echo "**❌ Tests failed.**" >> "$report"
+    log "Tests FAILED. Results written to ${report}"
+    return 1
+  fi
 }
 
 cmd_help() {

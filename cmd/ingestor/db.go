@@ -128,7 +128,8 @@ func applySchema(db *sql.DB) error {
 			first_seen TEXT,
 			advert_count INTEGER DEFAULT 0,
 			battery_mv INTEGER,
-			temperature_c REAL
+			temperature_c REAL,
+			scope TEXT
 		);
 
 		CREATE INDEX IF NOT EXISTS idx_inactive_nodes_last_seen ON inactive_nodes(last_seen);
@@ -354,6 +355,15 @@ func applySchema(db *sql.DB) error {
 		db.Exec(`ALTER TABLE nodes ADD COLUMN scope TEXT`)
 		db.Exec(`INSERT INTO _migrations (name) VALUES ('node_scope_v1')`)
 		log.Println("[migration] scope column added")
+	}
+
+	// Migration: add scope column to inactive_nodes table.
+	row = db.QueryRow("SELECT 1 FROM _migrations WHERE name = 'inactive_node_scope_v1'")
+	if row.Scan(&migDone) != nil {
+		log.Println("[migration] Adding scope column to inactive_nodes...")
+		db.Exec(`ALTER TABLE inactive_nodes ADD COLUMN scope TEXT`)
+		db.Exec(`INSERT INTO _migrations (name) VALUES ('inactive_node_scope_v1')`)
+		log.Println("[migration] inactive_nodes scope column added")
 	}
 
 	return nil
