@@ -786,7 +786,7 @@ func (db *DB) SearchNodes(query string, limit int) ([]map[string]interface{}, er
 	if limit <= 0 {
 		limit = 10
 	}
-	rows, err := db.conn.Query(`SELECT public_key, name, role, lat, lon, last_seen, first_seen, advert_count, battery_mv, temperature_c
+	rows, err := db.conn.Query(`SELECT public_key, name, role, lat, lon, last_seen, first_seen, advert_count, battery_mv, temperature_c, scope
 		FROM nodes WHERE name LIKE ? OR public_key LIKE ? ORDER BY last_seen DESC LIMIT ?`,
 		"%"+query+"%", query+"%", limit)
 	if err != nil {
