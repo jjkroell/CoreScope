@@ -50,6 +50,20 @@ async function run() {
 
   console.log(`\nRunning E2E tests against ${BASE}\n`);
 
+  // Helper: open the customizer panel. The toggle button is display:none in the
+  // nav (shown only in older builds), so force it visible before clicking.
+  // Returns true if panel was opened, false to signal the test should skip.
+  async function openCustomizer() {
+    await page.evaluate(() => {
+      const btn = document.getElementById('customizeToggle');
+      if (btn) btn.style.display = 'inline-flex';
+    });
+    const btn = await page.$('#customizeToggle');
+    if (!btn || !(await btn.isVisible())) return false;
+    await btn.click();
+    return true;
+  }
+
   // --- Group: Home page (tests 1, 6, 7) ---
 
   // Test 1: Home page loads
@@ -93,12 +107,10 @@ async function run() {
       };
     });
     const before = await page.evaluate(() => JSON.stringify(window.SITE_CONFIG && window.SITE_CONFIG.home));
-    const btn = await page.$('#customizeToggle, button[title*="ustom" i], [class*="customize"]');
-    if (!btn) {
-      console.log('    ⏭️  Customizer toggle not found — TODO: requires running server');
+    if (!(await openCustomizer())) {
+      console.log('    ⏭️  Customizer toggle not available — skipping');
       return;
     }
-    await btn.click();
     await page.waitForTimeout(200);
     const after = await page.evaluate(() => JSON.stringify(window.SITE_CONFIG && window.SITE_CONFIG.home));
     assert(after === before, 'Opening customizer should not mutate server home config');
@@ -108,14 +120,11 @@ async function run() {
     // TODO: requires running server with full customize/home wiring
     await page.goto(BASE, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('nav, .navbar, .nav, [class*="nav"]');
-    const toggleSelector = '#customizeToggle, button[title*="ustom" i], button[aria-label*="theme" i], [class*="customize"]';
-    const btn = await page.$(toggleSelector);
-    if (!btn) {
-      console.log('    ⏭️  Customizer toggle not found — TODO: requires running server');
+    const editedHero = 'Persisted Hero From Playwright';
+    if (!(await openCustomizer())) {
+      console.log('    ⏭️  Customizer toggle not available — skipping');
       return;
     }
-    const editedHero = 'Persisted Hero From Playwright';
-    await page.click(toggleSelector);
     const homeTab = page.locator('.cust-tab[data-tab="home"]');
     await homeTab.waitFor({ state: 'visible', timeout: 10000 });
     await homeTab.click();
@@ -1204,10 +1213,7 @@ async function run() {
     await page.goto(BASE, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('nav, .navbar, .nav, [class*="nav"]');
     // Open customizer
-    const toggleSel = '#customizeToggle, button[title*="ustom" i], [class*="customize"]';
-    const btn = await page.$(toggleSel);
-    if (!btn) { console.log('    ⏭️  Customizer toggle not found'); return; }
-    await btn.click();
+    if (!(await openCustomizer())) { console.log('    ⏭️  Customizer toggle not available'); return; }
     await page.waitForSelector('.cv2-local-banner', { timeout: 5000 });
     const bannerText = await page.$eval('.cv2-local-banner', el => el.textContent);
     assert(bannerText.includes('browser only'), `Banner should mention "browser only" but got "${bannerText}"`);
@@ -1241,10 +1247,7 @@ async function run() {
     });
     assert(!result.error, result.error || '');
     // Open customizer and check for override dot
-    const toggleSel = '#customizeToggle, button[title*="ustom" i], [class*="customize"]';
-    const btn = await page.$(toggleSel);
-    if (!btn) { console.log('    ⏭️  Customizer toggle not found'); return; }
-    await btn.click();
+    if (!(await openCustomizer())) { console.log('    ⏭️  Customizer toggle not available'); return; }
     await page.waitForSelector('.cust-overlay', { timeout: 5000 });
     // Click theme tab
     const themeTab = await page.$('.cust-tab[data-tab="theme"]');
@@ -1257,8 +1260,7 @@ async function run() {
     await page.evaluate(() => localStorage.removeItem('cs-theme-overrides'));
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForSelector('nav, .navbar, .nav, [class*="nav"]');
-    const btn2 = await page.$(toggleSel);
-    if (btn2) await btn2.click();
+    await openCustomizer();
     await page.waitForSelector('.cust-overlay', { timeout: 5000 });
     const themeTab2 = await page.$('.cust-tab[data-tab="theme"]');
     if (themeTab2) await themeTab2.click();
@@ -1271,10 +1273,7 @@ async function run() {
     await page.goto(BASE, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('nav, .navbar, .nav, [class*="nav"]');
     await page.evaluate(() => localStorage.removeItem('cs-theme-overrides'));
-    const toggleSel = '#customizeToggle, button[title*="ustom" i], [class*="customize"]';
-    const btn = await page.$(toggleSel);
-    if (!btn) { console.log('    ⏭️  Customizer toggle not found'); return; }
-    await btn.click();
+    if (!(await openCustomizer())) { console.log('    ⏭️  Customizer toggle not available'); return; }
     await page.waitForSelector('.cust-overlay', { timeout: 5000 });
     // Click theme tab
     const themeTab = await page.$('.cust-tab[data-tab="theme"]');

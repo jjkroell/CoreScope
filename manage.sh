@@ -1574,6 +1574,63 @@ cmd_test() {
   fi
 }
 
+cmd_e2e() {
+  local E2E_PORT=13581
+  local SERVER_PID=""
+
+  # Install Node deps + Playwright chromium if not already present
+  if [ ! -d node_modules/playwright ] && [ ! -d node_modules/@playwright ]; then
+    info "Installing Playwright..."
+    npm install playwright 2>&1 | tail -3
+  fi
+  if ! npx playwright --version &>/dev/null 2>&1; then
+    info "Installing Playwright browsers..."
+    npx playwright install chromium 2>/dev/null || true
+  fi
+
+  # Build the Go server binary
+  info "Building Go server..."
+  (cd cmd/server && go build -o ../../corescope-server .) || {
+    err "Go build failed. Run './manage.sh test' to check compilation."
+    exit 1
+  }
+  log "Server binary built."
+
+  # Kill anything on the test port, then start server
+  fuser -k ${E2E_PORT}/tcp 2>/dev/null || true
+  sleep 1
+  info "Starting test server on port ${E2E_PORT}..."
+  ./corescope-server -port ${E2E_PORT} -db test-fixtures/e2e-fixture.db -public public &
+  SERVER_PID=$!
+
+  # Cleanup on exit
+  cleanup_e2e() {
+    [ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null || true
+    fuser -k ${E2E_PORT}/tcp 2>/dev/null || true
+    rm -f corescope-server
+  }
+  trap cleanup_e2e EXIT INT TERM
+
+  # Wait for server ready
+  local ready=false
+  for i in $(seq 1 30); do
+    if curl -sf http://localhost:${E2E_PORT}/api/stats >/dev/null 2>&1; then
+      log "Server ready after ${i}s."
+      ready=true
+      break
+    fi
+    sleep 1
+  done
+  if ! $ready; then
+    err "Server did not start within 30 seconds."
+    exit 1
+  fi
+
+  # Run e2e tests
+  info "Running Playwright e2e tests..."
+  BASE_URL=http://localhost:${E2E_PORT} node test-e2e-playwright.js
+}
+
 cmd_help() {
   echo ""
   echo "CoreScope — Management Script"
@@ -1598,7 +1655,8 @@ cmd_help() {
   echo "    backup [dir]       Full backup: database + config + theme"
   echo "    restore <d>        Restore from backup dir or .db file"
   echo "    mqtt-test          Check if MQTT data is flowing"
-  echo "    test               Run Go test suite locally via Docker"
+  echo "    test               Run Go test suite locally via Docker
+    e2e                Run Playwright e2e tests locally (builds server, uses fixture DB)"
   echo ""
   echo "Prod uses docker-compose.yml; staging uses ${STAGING_COMPOSE_FILE}."
   echo ""
@@ -1619,6 +1677,7 @@ case "${1:-help}" in
   restore)   cmd_restore "$2" ;;
   mqtt-test) cmd_mqtt_test ;;
   test)      cmd_test ;;
+  e2e)       cmd_e2e ;;
   reset)     cmd_reset ;;
   help|*)    cmd_help ;;
 esac
