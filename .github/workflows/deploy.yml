@@ -422,19 +422,23 @@ jobs:
     needs: [publish]
     runs-on: ubuntu-latest
     steps:
+      - name: Install SSH key and known hosts
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "${{ secrets.PROD_SSH_KEY }}" > ~/.ssh/prod_deploy_key
+          chmod 600 ~/.ssh/prod_deploy_key
+          ssh-keyscan -H "${{ secrets.PROD_HOST }}" >> ~/.ssh/known_hosts
+
       - name: Deploy to production server
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ secrets.PROD_HOST }}
-          username: ${{ secrets.PROD_USER }}
-          key: ${{ secrets.PROD_SSH_KEY }}
-          script: |
-            set -e
-            cd ~/CoreScope
-            git pull origin master
-            docker build -t corescope:latest .
-            docker compose up -d --force-recreate master
-            echo "Production deploy complete: $(git rev-parse --short HEAD)"
+        run: |
+          ssh -i ~/.ssh/prod_deploy_key \
+              "${{ secrets.PROD_USER }}@${{ secrets.PROD_HOST }}" \
+              'set -e
+               cd ~/CoreScope
+               git pull origin master
+               docker build -t corescope:latest .
+               docker compose up -d --force-recreate master
+               echo "Production deploy complete: $(git rev-parse --short HEAD)"'
 
       - name: Post production summary
         run: |

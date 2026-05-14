@@ -152,14 +152,15 @@
       _analyticsData = {};
       const rqs = RegionFilter.regionQueryString();
       const sep = rqs ? '?' + rqs.slice(1) : '';
-      const [hashData, rfData, topoData, chanData, collisionData] = await Promise.all([
+      const [hashData, rfData, topoData, chanData, collisionData, statsData] = await Promise.all([
         api('/analytics/hash-sizes' + sep, { ttl: CLIENT_TTL.analyticsRF }),
         api('/analytics/rf' + sep, { ttl: CLIENT_TTL.analyticsRF }),
         api('/analytics/topology' + sep, { ttl: CLIENT_TTL.analyticsRF }),
         api('/analytics/channels' + sep, { ttl: CLIENT_TTL.analyticsRF }),
         api('/analytics/hash-collisions' + sep, { ttl: CLIENT_TTL.analyticsRF }),
+        api('/stats', { ttl: 30000 }),
       ]);
-      _analyticsData = { hashData, rfData, topoData, chanData, collisionData };
+      _analyticsData = { hashData, rfData, topoData, chanData, collisionData, statsData };
       renderTab(_currentTab);
     } catch (e) {
       document.getElementById('analyticsContent').innerHTML =
@@ -213,17 +214,26 @@
 
   // ===================== OVERVIEW =====================
   function renderOverview(el, d) {
-    const rf = d.rfData, topo = d.topoData, ch = d.chanData, hs = d.hashData;
+    const rf = d.rfData, topo = d.topoData, ch = d.chanData, hs = d.hashData, st = d.statsData || {};
+    const last24h = st.packetsLast24h || 0;
+    const lastHour = st.packetsLastHour || 0;
     el.innerHTML = `
       <div class="stats-grid">
         <div class="stat-card">
           <div class="stat-value">${(rf.totalTransmissions || rf.totalAllPackets || rf.totalPackets).toLocaleString()}</div>
-          <div class="stat-label">Total Transmissions</div>
+          <div class="stat-label">Unique Packets</div>
+          <div class="stat-detail">deduplicated, last ${((rf.timeSpanHours || 1)).toFixed(0)}h</div>
           <div class="stat-spark">${sparkSvg(rf.packetsPerHour.map(h=>h.count), 'var(--accent)')}</div>
         </div>
         <div class="stat-card">
+          <div class="stat-value">${last24h.toLocaleString()}</div>
+          <div class="stat-label">Observations (24h)</div>
+          <div class="stat-detail">${lastHour.toLocaleString()} last hour</div>
+        </div>
+        <div class="stat-card">
           <div class="stat-value">${rf.totalPackets.toLocaleString()}</div>
-          <div class="stat-label">Observations with Signal</div>
+          <div class="stat-label">Total Observations</div>
+          <div class="stat-detail">all received, last ${((rf.timeSpanHours || 1)).toFixed(0)}h</div>
         </div>
         <div class="stat-card">
           <div class="stat-value">${topo.uniqueNodes}</div>
@@ -253,17 +263,6 @@
           <div class="stat-value">${rf.avgPacketSize} B</div>
           <div class="stat-label">Avg Packet Size</div>
           <div class="stat-detail">${rf.minPacketSize}–${rf.maxPacketSize} B</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value">${((rf.timeSpanHours || 1)).toFixed(1)}h</div>
-          <div class="stat-label">Data Span</div>
-        </div>
-      </div>
-
-      <div class="analytics-row">
-        <div class="analytics-card flex-1">
-          <h3>📈 Packets / Hour</h3>
-          ${barChart(rf.packetsPerHour.map(h=>h.count), rf.packetsPerHour.map(h=>h.hour.slice(11)+'h'), 'var(--accent)')}
         </div>
       </div>
 
@@ -3447,9 +3446,16 @@ function destroy() { _analyticsData = {}; _channelData = null; if (_ngState && _
       { label: 'Other',      color: '#94a3b8',  values: rows.map(r => r.nodesOther) },
     ].filter(s => s.values.some(v => v > 0));
 
+    const rfData = (_analyticsData || {}).rfData;
     const charts = document.getElementById('trendsCharts');
     charts.innerHTML = `
       <div class="trends-grid">
+        ${rfData && rfData.packetsPerHour && rfData.packetsPerHour.length ? `
+        <div class="analytics-card trends-card trends-card--wide">
+          <div class="trends-card-title">Packets / Hour</div>
+          <div class="trends-card-sub">Observations received per clock hour (last ~30h)</div>
+          ${barChart(rfData.packetsPerHour.map(h=>h.count), rfData.packetsPerHour.map(h=>h.hour.slice(11)+'h'), 'var(--accent)')}
+        </div>` : ''}
         <div class="analytics-card trends-card">
           <div class="trends-card-title">Unique Packets</div>
           <div class="trends-card-sub">Daily unique transmissions</div>
