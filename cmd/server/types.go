@@ -513,7 +513,8 @@ type RFAnalyticsResponse struct {
 	MinPacketSize      int                   `json:"minPacketSize"`
 	MaxPacketSize      int                   `json:"maxPacketSize"`
 	AvgPacketSize      float64               `json:"avgPacketSize"`
-	PacketsPerHour     []HourlyCount         `json:"packetsPerHour"`
+	PacketsPerHour      []HourlyCount         `json:"packetsPerHour"`
+	ObservationsPerHour []HourlyCount         `json:"observationsPerHour"`
 	PayloadTypes       []PayloadTypeEntry    `json:"payloadTypes"`
 	SnrByType          []PayloadTypeSignal   `json:"snrByType"`
 	SignalOverTime     []SignalOverTimeEntry `json:"signalOverTime"`

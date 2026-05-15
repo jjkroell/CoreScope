@@ -43,12 +43,13 @@
       const bh = (v / max) * (h - pad * 2);
       const y = h - pad - bh;
       const c = typeof colors === 'string' ? colors : colors[i % colors.length];
-      svg += `<rect x="${x}" y="${y}" width="${barW}" height="${bh}" fill="${c}" rx="2"/>`;
+      const tip = labels[i] ? `${labels[i]}: ${v.toLocaleString()}` : v.toLocaleString();
+      svg += `<rect x="${x}" y="${y}" width="${barW}" height="${Math.max(bh, 1)}" fill="${c}" rx="2" data-tooltip="${tip}" style="cursor:default"/>`;
       if (labels[i]) {
         const lx = x + barW / 2;
         const ly = h - pad + 12;
         if (rotateLabels) {
-          svg += `<text x="${lx}" y="${ly}" text-anchor="end" font-size="9" fill="var(--text-muted)" transform="rotate(-45,${lx},${ly})">${labels[i]}</text>`;
+          svg += `<text x="${lx}" y="${ly}" text-anchor="start" font-size="9" fill="var(--text-muted)" transform="rotate(45,${lx},${ly})">${labels[i]}</text>`;
         } else {
           svg += `<text x="${lx}" y="${ly}" text-anchor="middle" font-size="9" fill="var(--text-muted)">${labels[i]}</text>`;
         }
@@ -3462,7 +3463,7 @@ function destroy() { _analyticsData = {}; _channelData = null; if (_ngState && _
         ${rfData && rfData.packetsPerHour && rfData.packetsPerHour.length ? `
         <div class="analytics-card trends-card trends-card--wide">
           <div class="trends-card-title">Packets / Hour</div>
-          <div class="trends-card-sub">Observations received per clock hour (last 24h)</div>
+          <div class="trends-card-sub">Unique packets per clock hour (last 24h)</div>
           <div class="trends-chart-hour">
             ${(() => { const ph = rfData.packetsPerHour.slice(-24); return barChart(ph.map(h=>h.count), ph.map(h=>h.hour.slice(11)+'h'), 'var(--accent)', 800, 220, 40, true); })()}
           </div>
