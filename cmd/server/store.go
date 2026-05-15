@@ -3472,6 +3472,7 @@ func (s *PacketStore) computeAnalyticsRF(region string) map[string]interface{} {
 	seenTypeHashes := make(map[string]bool, len(s.packets))
 	typeBuckets := map[int]int{}
 	hourBuckets := map[string]int{}
+	obsHourBuckets := map[string]int{} // total observations per hour (not deduplicated)
 	seenHourHash := make(map[string]bool, len(s.packets)) // dedup packets-per-hour by hash+hour
 	snrByType := map[string]*struct{ vals []float64 }{}
 	sigTime := map[string]*struct {
@@ -3548,6 +3549,7 @@ func (s *PacketStore) computeAnalyticsRF(region string) map[string]interface{} {
 				// Packets per hour (unique by hash per hour)
 				if len(ts) >= 13 {
 					hr := ts[:13]
+					obsHourBuckets[hr]++
 					hk := hash + "|" + hr
 					if hash == "" || !seenHourHash[hk] {
 						if hash != "" {
@@ -3643,6 +3645,7 @@ func (s *PacketStore) computeAnalyticsRF(region string) map[string]interface{} {
 
 					if len(ts) >= 13 {
 						hr := ts[:13]
+						obsHourBuckets[hr]++
 						hk := hash + "|" + hr
 						if hash == "" || !seenHourHash[hk] {
 							if hash != "" {
@@ -3773,6 +3776,16 @@ func (s *PacketStore) computeAnalyticsRF(region string) map[string]interface{} {
 	packetsPerHour := make([]hourCount, len(hourKeys))
 	for i, k := range hourKeys {
 		packetsPerHour[i] = hourCount{Hour: k, Count: hourBuckets[k]}
+	}
+
+	obsHourKeys := make([]string, 0, len(obsHourBuckets))
+	for k := range obsHourBuckets {
+		obsHourKeys = append(obsHourKeys, k)
+	}
+	sort.Strings(obsHourKeys)
+	obsPerHour := make([]hourCount, len(obsHourKeys))
+	for i, k := range obsHourKeys {
+		obsPerHour[i] = hourCount{Hour: k, Count: obsHourBuckets[k]}
 	}
 
 	// Payload types
@@ -3965,7 +3978,8 @@ func (s *PacketStore) computeAnalyticsRF(region string) map[string]interface{} {
 		"minPacketSize":      minInt(packetSizes),
 		"maxPacketSize":      maxInt(packetSizes),
 		"avgPacketSize":      avgPktSize,
-		"packetsPerHour":     packetsPerHour,
+		"packetsPerHour":      packetsPerHour,
+		"observationsPerHour": obsPerHour,
 		"payloadTypes":       payloadTypes,
 		"snrByType":          snrByTypeArr,
 		"signalOverTime":     signalOverTime,
