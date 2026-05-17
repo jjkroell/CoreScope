@@ -18,6 +18,24 @@
     if (!o) return id;
     return o.name || id;
   }
+  function obsIataBadge(p) {
+    const iata = p?.observer_iata || observerMap.get(p?.observer_id)?.iata || '';
+    if (!iata) return '';
+    return `<span class="badge-iata" style="font-size:10px;margin-left:4px">${escapeHtml(iata)}</span>`;
+  }
+  function groupedObserverIataBadgesHtml(packet) {
+    const seen = new Set();
+    const srcs = packet._children?.length ? packet._children : [packet];
+    let html = '';
+    for (const c of srcs) {
+      const iata = c.observer_iata || observerMap.get(c.observer_id)?.iata || '';
+      if (iata && !seen.has(iata)) {
+        seen.add(iata);
+        html += `<span class="badge-iata" style="font-size:10px;margin-left:4px">${escapeHtml(iata)}</span>`;
+      }
+    }
+    return html;
+  }
   let selectedId = null;
   let groupByHash = true;
   let filters = {};
@@ -1675,7 +1693,7 @@
           <td class="mono col-hash"${p.hash ? ` data-copy="${p.hash}" data-tooltip="Click to copy hash"` : ''}>${midTruncate(p.hash || '—', 4)}</td>
           <td class="col-size">${groupSize ? groupSize + 'B' : '—'}</td>
           <td class="col-type">${p.payload_type != null ? `<span class="badge badge-${groupTypeClass}">${groupTypeName}</span>${transportBadge(p.route_type)}` : '—'}</td>
-          <td class="col-observer">${truncate(obsNameOnly(headerObserverId), 25)}</td>
+          <td class="col-observer">${truncate(obsNameOnly(headerObserverId), 25)}${groupedObserverIataBadgesHtml(p)}</td>
           <td class="col-rpt">${p.observation_count > 1 ? '<span class="badge badge-obs" title="Seen ' + p.observation_count + ' times">×' + p.observation_count + '</span>' : (isSingle ? '' : p.count)}</td>
           <td class="col-path"><span class="path-hops">${groupPathStr}</span></td>
           <td class="col-details">${getDetailPreview(getParsedDecoded(p))}</td>
@@ -1699,7 +1717,7 @@
               <td class="mono col-hash"${c.hash ? ` data-copy="${c.hash}" data-tooltip="Click to copy hash"` : ''}>${midTruncate(c.hash || '', 4)}</td>
               <td class="col-size">${size}B</td>
               <td class="col-type"><span class="badge badge-${typeClass}">${typeName}</span>${transportBadge(c.route_type)}</td>
-              <td class="col-observer">${truncate(obsNameOnly(c.observer_id), 25)}</td>
+              <td class="col-observer">${truncate(obsNameOnly(c.observer_id), 25)}${obsIataBadge(c)}</td>
               <td class="col-rpt"></td>
               <td class="col-path"><span class="path-hops">${childPathStr}</span></td>
               <td class="col-details">${getDetailPreview(getParsedDecoded(c))}</td>
@@ -1728,7 +1746,7 @@
         <td class="mono col-hash"${p.hash ? ` data-copy="${p.hash}" data-tooltip="Click to copy hash"` : ''}>${midTruncate(p.hash || String(p.id), 4)}</td>
         <td class="col-size">${size}B</td>
         <td class="col-type"><span class="badge badge-${typeClass}">${typeName}</span>${transportBadge(p.route_type)}</td>
-        <td class="col-observer">${truncate(obsNameOnly(p.observer_id), 25)}</td>
+        <td class="col-observer">${truncate(obsNameOnly(p.observer_id), 25)}${obsIataBadge(p)}</td>
         <td class="col-rpt"></td>
         <td class="col-path"><span class="path-hops">${pathStr}</span></td>
         <td class="col-details">${detail}</td>

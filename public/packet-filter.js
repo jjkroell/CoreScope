@@ -17,10 +17,10 @@
   // ── Lexer ──────────────────────────────────────────────────────────────────
   var TK = {
     FIELD: 'FIELD', OP: 'OP', STRING: 'STRING', NUMBER: 'NUMBER', BOOL: 'BOOL',
-    AND: 'AND', OR: 'OR', NOT: 'NOT', LPAREN: 'LPAREN', RPAREN: 'RPAREN'
+    AND: 'AND', OR: 'OR', NOT: 'NOT', LPAREN: 'LPAREN', RPAREN: 'RPAREN', COMMA: 'COMMA'
   };
 
-  var OP_WORDS = { contains: true, starts_with: true, ends_with: true };
+  var OP_WORDS = { contains: true, starts_with: true, ends_with: true, 'in': true };
 
   function lex(input) {
     var tokens = [], i = 0, len = input.length;
@@ -41,6 +41,7 @@
       if (input[i] === '!') { tokens.push({ type: TK.NOT, value: '!' }); i++; continue; }
       if (input[i] === '(') { tokens.push({ type: TK.LPAREN }); i++; continue; }
       if (input[i] === ')') { tokens.push({ type: TK.RPAREN }); i++; continue; }
+      if (input[i] === ',') { tokens.push({ type: TK.COMMA }); i++; continue; }
       // quoted string
       if (input[i] === '"') {
         var j = i + 1;
@@ -149,6 +150,25 @@
       }
       var op = advance().value;
 
+      // in operator: field in ("a", "b", ...)
+      if (op === 'in') {
+        if (!peek() || peek().type !== TK.LPAREN) throw new Error("Expected '(' after 'in'");
+        advance(); // consume LPAREN
+        var inValues = [];
+        while (peek() && peek().type !== TK.RPAREN) {
+          var vt = peek();
+          if (vt.type === TK.STRING || vt.type === TK.NUMBER || vt.type === TK.BOOL || vt.type === TK.FIELD) {
+            inValues.push(advance().value);
+          } else {
+            throw new Error("Expected value in 'in' list, got '" + (vt.value || vt.type) + "'");
+          }
+          if (peek() && peek().type === TK.COMMA) advance(); // consume comma
+        }
+        if (!peek() || peek().type !== TK.RPAREN) throw new Error("Expected ')' to close 'in' list");
+        advance(); // consume RPAREN
+        return { type: 'comparison', field: field, op: 'in', value: inValues };
+      }
+
       // Parse value
       var valTok = peek();
       if (!valTok) throw new Error("Expected value after '" + field + ' ' + op + "'");
@@ -190,6 +210,7 @@
     }
     if (field === 'observer') return packet.observer_name || '';
     if (field === 'observer_id') return packet.observer_id || '';
+    if (field === 'observer_iata' || field === 'iata') return packet.observer_iata || '';
     if (field === 'observations') return packet.observation_count || 0;
     if (field === 'path') {
       try { return JSON.parse(packet.path_json || '[]').join(' → '); } catch(e) { return ''; }
@@ -263,6 +284,12 @@
             eq = String(fieldVal).toLowerCase() === String(resolvedTarget).toLowerCase();
           }
           return op === '==' ? eq : !eq;
+        }
+
+        // in operator
+        if (op === 'in') {
+          var fv = String(fieldVal).toLowerCase();
+          return Array.isArray(target) && target.some(function(v) { return String(v).toLowerCase() === fv; });
         }
 
         // String operators
@@ -385,6 +412,24 @@
     // Observer
     c = compile('observer == "kpabap"');
     assert(c.filter({ observer_name: 'kpabap' }), 'observer');
+
+    // observer_iata / iata field
+    c = compile('observer_iata == "YVR"');
+    assert(c.filter({ observer_iata: 'YVR' }), 'observer_iata ==');
+    assert(!c.filter({ observer_iata: 'YYZ' }), 'observer_iata != fail');
+
+    c = compile('iata == "YVR"');
+    assert(c.filter({ observer_iata: 'YVR' }), 'iata alias');
+
+    // in operator
+    c = compile('iata in ("YVR", "YYZ")');
+    assert(!c.error, 'iata in no error');
+    assert(c.filter({ observer_iata: 'YVR' }), 'iata in match 1');
+    assert(c.filter({ observer_iata: 'YYZ' }), 'iata in match 2');
+    assert(!c.filter({ observer_iata: 'SEA' }), 'iata in no match');
+
+    c = compile('iata in ("yvr")');
+    assert(c.filter({ observer_iata: 'YVR' }), 'iata in case-insensitive');
 
     console.log('\nAll tests passed!');
     module.exports = { parse: parse, evaluate: evaluate, compile: compile };

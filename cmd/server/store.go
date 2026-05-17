@@ -36,6 +36,7 @@ type StoreTx struct {
 	// Display fields from longest-path observation
 	ObserverID   string
 	ObserverName string
+	ObserverIATA string
 	SNR          *float64
 	RSSI         *float64
 	PathJSON     string
@@ -59,6 +60,7 @@ type StoreObs struct {
 	TransmissionID int
 	ObserverID     string
 	ObserverName   string
+	ObserverIATA   string
 	Direction      string
 	SNR            *float64
 	RSSI           *float64
@@ -334,7 +336,7 @@ func (s *PacketStore) Load() error {
 	if s.db.isV3 {
 		loadSQL = `SELECT t.id, t.raw_hex, t.hash, t.first_seen, t.route_type,
 				t.payload_type, t.payload_version, t.decoded_json,
-				o.id, obs.id, obs.name, o.direction,
+				o.id, obs.id, obs.name, COALESCE(obs.iata, ''), o.direction,
 				o.snr, o.rssi, o.score, o.path_json, strftime('%Y-%m-%dT%H:%M:%fZ', o.timestamp, 'unixepoch')` + rpCol + `
 			FROM transmissions t
 			LEFT JOIN observations o ON o.transmission_id = t.id
@@ -343,10 +345,11 @@ func (s *PacketStore) Load() error {
 	} else {
 		loadSQL = `SELECT t.id, t.raw_hex, t.hash, t.first_seen, t.route_type,
 				t.payload_type, t.payload_version, t.decoded_json,
-				o.id, o.observer_id, o.observer_name, o.direction,
+				o.id, o.observer_id, o.observer_name, COALESCE(obs.iata, ''), o.direction,
 				o.snr, o.rssi, o.score, o.path_json, o.timestamp` + rpCol + `
 			FROM transmissions t
 			LEFT JOIN observations o ON o.transmission_id = t.id
+			LEFT JOIN observers obs ON obs.id = o.observer_id
 			ORDER BY t.first_seen ASC, o.timestamp DESC`
 	}
 
@@ -361,14 +364,14 @@ func (s *PacketStore) Load() error {
 		var rawHex, hash, firstSeen, decodedJSON sql.NullString
 		var routeType, payloadType, payloadVersion sql.NullInt64
 		var obsID sql.NullInt64
-		var observerID, observerName, direction, pathJSON, obsTimestamp sql.NullString
+		var observerID, observerName, observerIATA, direction, pathJSON, obsTimestamp sql.NullString
 		var snr, rssi sql.NullFloat64
 		var score sql.NullInt64
 		var resolvedPathStr sql.NullString
 
 		scanArgs := []interface{}{&txID, &rawHex, &hash, &firstSeen, &routeType, &payloadType,
 			&payloadVersion, &decodedJSON,
-			&obsID, &observerID, &observerName, &direction,
+			&obsID, &observerID, &observerName, &observerIATA, &direction,
 			&snr, &rssi, &score, &pathJSON, &obsTimestamp}
 		if s.db.hasResolvedPath {
 			scanArgs = append(scanArgs, &resolvedPathStr)
@@ -423,6 +426,7 @@ func (s *PacketStore) Load() error {
 				TransmissionID: txID,
 				ObserverID:     obsIDStr,
 				ObserverName:   nullStrVal(observerName),
+				ObserverIATA:   nullStrVal(observerIATA),
 				Direction:      nullStrVal(direction),
 				SNR:            nullFloatPtr(snr),
 				RSSI:           nullFloatPtr(rssi),
@@ -494,6 +498,7 @@ func pickBestObservation(tx *StoreTx) {
 	}
 	tx.ObserverID = best.ObserverID
 	tx.ObserverName = best.ObserverName
+	tx.ObserverIATA = best.ObserverIATA
 	tx.SNR = best.SNR
 	tx.RSSI = best.RSSI
 	tx.PathJSON = best.PathJSON
@@ -712,6 +717,7 @@ func groupedTxsToPage(txs []*StoreTx, total, offset, limit int) *PacketResult {
 
 	packets := make([]map[string]interface{}, len(page))
 	for i, tx := range page {
+		distinctIatas := storeTxDistinctIatas(tx)
 		m := map[string]interface{}{
 			"hash":              strOrNil(tx.Hash),
 			"first_seen":        strOrNil(tx.FirstSeen),
@@ -721,6 +727,8 @@ func groupedTxsToPage(txs []*StoreTx, total, offset, limit int) *PacketResult {
 			"latest":            strOrNil(tx.LatestSeen),
 			"observer_id":       strOrNil(tx.ObserverID),
 			"observer_name":     strOrNil(tx.ObserverName),
+			"observer_iata":     strOrNil(tx.ObserverIATA),
+			"distinct_iatas":    distinctIatas,
 			"path_json":         strOrNil(tx.PathJSON),
 			"payload_type":      intPtrOrNil(tx.PayloadType),
 			"route_type":        intPtrOrNil(tx.RouteType),
@@ -736,6 +744,30 @@ func groupedTxsToPage(txs []*StoreTx, total, offset, limit int) *PacketResult {
 	}
 
 	return &PacketResult{Packets: packets, Total: total}
+}
+
+// storeTxDistinctIatas returns a sorted, deduped list of observer IATA codes
+// for a StoreTx, excluding empty values. Used by groupedTxsToPage to surface
+// cross-region reception in the default packets view. Issue #1189.
+func storeTxDistinctIatas(tx *StoreTx) []string {
+	if tx == nil {
+		return []string{}
+	}
+	seen := make(map[string]bool)
+	if tx.ObserverIATA != "" {
+		seen[tx.ObserverIATA] = true
+	}
+	for _, o := range tx.Observations {
+		if o != nil && o.ObserverIATA != "" {
+			seen[o.ObserverIATA] = true
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for k := range seen {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // GetStoreStats returns aggregate counts (packet data from memory, node/observer from DB).
@@ -1160,7 +1192,7 @@ func (s *PacketStore) IngestNewFromDB(sinceID, limit int) ([]map[string]interfac
 	if s.db.isV3 {
 		querySQL = `SELECT t.id, t.raw_hex, t.hash, t.first_seen, t.route_type,
 				t.payload_type, t.payload_version, t.decoded_json,
-				o.id, obs.id, obs.name, o.direction,
+				o.id, obs.id, obs.name, COALESCE(obs.iata, ''), o.direction,
 				o.snr, o.rssi, o.score, o.path_json, strftime('%Y-%m-%dT%H:%M:%fZ', o.timestamp, 'unixepoch')
 			FROM transmissions t
 			LEFT JOIN observations o ON o.transmission_id = t.id
@@ -1170,10 +1202,11 @@ func (s *PacketStore) IngestNewFromDB(sinceID, limit int) ([]map[string]interfac
 	} else {
 		querySQL = `SELECT t.id, t.raw_hex, t.hash, t.first_seen, t.route_type,
 				t.payload_type, t.payload_version, t.decoded_json,
-				o.id, o.observer_id, o.observer_name, o.direction,
+				o.id, o.observer_id, o.observer_name, COALESCE(obs.iata, ''), o.direction,
 				o.snr, o.rssi, o.score, o.path_json, o.timestamp
 			FROM transmissions t
 			LEFT JOIN observations o ON o.transmission_id = t.id
+			LEFT JOIN observers obs ON obs.id = o.observer_id
 			WHERE t.id > ?
 			ORDER BY t.id ASC, o.timestamp DESC`
 	}
@@ -1187,13 +1220,13 @@ func (s *PacketStore) IngestNewFromDB(sinceID, limit int) ([]map[string]interfac
 
 	// Scan into temp structures
 	type tempRow struct {
-		txID                                                 int
-		rawHex, hash, firstSeen, decodedJSON                 string
-		routeType, payloadType                               *int
-		obsID                                                *int
-		observerID, observerName, direction, pathJSON, obsTS string
-		snr, rssi                                            *float64
-		score                                                *int
+		txID                                                               int
+		rawHex, hash, firstSeen, decodedJSON                               string
+		routeType, payloadType                                             *int
+		obsID                                                              *int
+		observerID, observerName, observerIATA, direction, pathJSON, obsTS string
+		snr, rssi                                                          *float64
+		score                                                              *int
 	}
 
 	var tempRows []tempRow
@@ -1205,13 +1238,13 @@ func (s *PacketStore) IngestNewFromDB(sinceID, limit int) ([]map[string]interfac
 		var rawHex, hash, firstSeen, decodedJSON sql.NullString
 		var routeType, payloadType, payloadVersion sql.NullInt64
 		var obsIDVal sql.NullInt64
-		var observerID, observerName, direction, pathJSON, obsTimestamp sql.NullString
+		var observerID, observerName, observerIATA, direction, pathJSON, obsTimestamp sql.NullString
 		var snrVal, rssiVal sql.NullFloat64
 		var scoreVal sql.NullInt64
 
 		if err := rows.Scan(&txID, &rawHex, &hash, &firstSeen, &routeType, &payloadType,
 			&payloadVersion, &decodedJSON,
-			&obsIDVal, &observerID, &observerName, &direction,
+			&obsIDVal, &observerID, &observerName, &observerIATA, &direction,
 			&snrVal, &rssiVal, &scoreVal, &pathJSON, &obsTimestamp); err != nil {
 			continue
 		}
@@ -1234,6 +1267,7 @@ func (s *PacketStore) IngestNewFromDB(sinceID, limit int) ([]map[string]interfac
 			payloadType:  nullIntPtr(payloadType),
 			observerID:   nullStrVal(observerID),
 			observerName: nullStrVal(observerName),
+			observerIATA: nullStrVal(observerIATA),
 			direction:    nullStrVal(direction),
 			pathJSON:     nullStrVal(pathJSON),
 			obsTS:        nullStrVal(obsTimestamp),
@@ -1321,6 +1355,7 @@ func (s *PacketStore) IngestNewFromDB(sinceID, limit int) ([]map[string]interfac
 				TransmissionID: r.txID,
 				ObserverID:     r.observerID,
 				ObserverName:   r.observerName,
+				ObserverIATA:   r.observerIATA,
 				Direction:      r.direction,
 				SNR:            r.snr,
 				RSSI:           r.rssi,
@@ -1423,6 +1458,7 @@ func (s *PacketStore) IngestNewFromDB(sinceID, limit int) ([]map[string]interfac
 				"decoded_json":      strOrNil(tx.DecodedJSON),
 				"observer_id":       strOrNil(obs.ObserverID),
 				"observer_name":     strOrNil(obs.ObserverName),
+				"observer_iata":     strOrNil(obs.ObserverIATA),
 				"snr":               floatPtrOrNil(obs.SNR),
 				"rssi":              floatPtrOrNil(obs.RSSI),
 				"path_json":         strOrNil(obs.PathJSON),
@@ -1509,7 +1545,7 @@ func (s *PacketStore) IngestNewObservations(sinceObsID, limit int) []map[string]
 
 	var querySQL string
 	if s.db.isV3 {
-		querySQL = `SELECT o.id, o.transmission_id, obs.id, obs.name, o.direction,
+		querySQL = `SELECT o.id, o.transmission_id, obs.id, obs.name, COALESCE(obs.iata, ''), o.direction,
 				o.snr, o.rssi, o.score, o.path_json, strftime('%Y-%m-%dT%H:%M:%fZ', o.timestamp, 'unixepoch')
 			FROM observations o
 			LEFT JOIN observers obs ON obs.rowid = o.observer_idx
@@ -1517,9 +1553,10 @@ func (s *PacketStore) IngestNewObservations(sinceObsID, limit int) []map[string]
 			ORDER BY o.id ASC
 			LIMIT ?`
 	} else {
-		querySQL = `SELECT o.id, o.transmission_id, o.observer_id, o.observer_name, o.direction,
+		querySQL = `SELECT o.id, o.transmission_id, o.observer_id, o.observer_name, COALESCE(obs.iata, ''), o.direction,
 				o.snr, o.rssi, o.score, o.path_json, o.timestamp
 			FROM observations o
+			LEFT JOIN observers obs ON obs.id = o.observer_id
 			WHERE o.id > ?
 			ORDER BY o.id ASC
 			LIMIT ?`
@@ -1537,6 +1574,7 @@ func (s *PacketStore) IngestNewObservations(sinceObsID, limit int) []map[string]
 		txID         int
 		observerID   string
 		observerName string
+		observerIATA string
 		direction    string
 		snr, rssi    *float64
 		score        *int
@@ -1547,11 +1585,11 @@ func (s *PacketStore) IngestNewObservations(sinceObsID, limit int) []map[string]
 	var obsRows []obsRow
 	for rows.Next() {
 		var oid, txID int
-		var observerID, observerName, direction, pathJSON, ts sql.NullString
+		var observerID, observerName, observerIATA, direction, pathJSON, ts sql.NullString
 		var snr, rssi sql.NullFloat64
 		var score sql.NullInt64
 
-		if err := rows.Scan(&oid, &txID, &observerID, &observerName, &direction,
+		if err := rows.Scan(&oid, &txID, &observerID, &observerName, &observerIATA, &direction,
 			&snr, &rssi, &score, &pathJSON, &ts); err != nil {
 			continue
 		}
@@ -1561,6 +1599,7 @@ func (s *PacketStore) IngestNewObservations(sinceObsID, limit int) []map[string]
 			txID:         txID,
 			observerID:   nullStrVal(observerID),
 			observerName: nullStrVal(observerName),
+			observerIATA: nullStrVal(observerIATA),
 			direction:    nullStrVal(direction),
 			snr:          nullFloatPtr(snr),
 			rssi:         nullFloatPtr(rssi),
@@ -1613,6 +1652,7 @@ func (s *PacketStore) IngestNewObservations(sinceObsID, limit int) []map[string]
 			TransmissionID: r.txID,
 			ObserverID:     r.observerID,
 			ObserverName:   r.observerName,
+			ObserverIATA:   r.observerIATA,
 			Direction:      r.direction,
 			SNR:            r.snr,
 			RSSI:           r.rssi,
@@ -2040,6 +2080,7 @@ func (s *PacketStore) enrichObs(obs *StoreObs) map[string]interface{} {
 		"timestamp":     strOrNil(obs.Timestamp),
 		"observer_id":   strOrNil(obs.ObserverID),
 		"observer_name": strOrNil(obs.ObserverName),
+		"observer_iata": strOrNil(obs.ObserverIATA),
 		"direction":     strOrNil(obs.Direction),
 		"snr":           floatPtrOrNil(obs.SNR),
 		"rssi":          floatPtrOrNil(obs.RSSI),
@@ -2077,6 +2118,7 @@ func txToMap(tx *StoreTx, includeObservations ...bool) map[string]interface{} {
 		"observation_count": tx.ObservationCount,
 		"observer_id":       strOrNil(tx.ObserverID),
 		"observer_name":     strOrNil(tx.ObserverName),
+		"observer_iata":     strOrNil(tx.ObserverIATA),
 		"snr":               floatPtrOrNil(tx.SNR),
 		"rssi":              floatPtrOrNil(tx.RSSI),
 		"path_json":         strOrNil(tx.PathJSON),
@@ -2099,6 +2141,7 @@ func txToMap(tx *StoreTx, includeObservations ...bool) map[string]interface{} {
 				"id":            o.ID,
 				"observer_id":   strOrNil(o.ObserverID),
 				"observer_name": strOrNil(o.ObserverName),
+				"observer_iata": strOrNil(o.ObserverIATA),
 				"snr":           floatPtrOrNil(o.SNR),
 				"rssi":          floatPtrOrNil(o.RSSI),
 				"path_json":     strOrNil(o.PathJSON),
@@ -4204,7 +4247,7 @@ func (pm *prefixMap) resolveWithContext(hop string, contextPubkeys []string, gra
 						otherPK = e.NodeB
 					}
 					if strings.EqualFold(otherPK, candPK) {
-						s := e.Score(now)
+						s := e.Score(now) * e.Confidence()
 						if s > bestScore {
 							bestScore = s
 							bestCount = e.Count

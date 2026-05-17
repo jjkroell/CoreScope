@@ -183,6 +183,11 @@ func main() {
 		database.hasFromPubkey = true
 	}
 
+	// Add iata column to observers if missing (issue #1189).
+	if err := ensureObserverIATAColumn(dbPath); err != nil {
+		log.Printf("[startup] warning: could not ensure observers.iata column: %v", err)
+	}
+
 	// Load or build neighbor graph
 	if neighborEdgesTableExists(database.conn) {
 		store.graph = loadNeighborEdgesFromDB(database.conn)

@@ -7,6 +7,7 @@ import (
 	"math"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -23,6 +24,10 @@ const (
 	affinityConfidenceRatio = 3.0
 	// Minimum observation count to auto-resolve.
 	affinityMinObservations = 3
+	// Source-diversity saturation: edges contributed by this many distinct
+	// observers (or more) earn full confidence weight (multiplier 1.0).
+	// Fewer observers earn a proportional fraction. Issue #1229 (Option C).
+	affinityObserverSaturation = 3.0
 )
 
 // affinityLambda = ln(2) / half-life-hours, precomputed.
@@ -70,6 +75,22 @@ func (e *NeighborEdge) Score(now time.Time) float64 {
 	return countFactor * decay
 }
 
+// Confidence returns a source-diversity multiplier in (0, 1] derived from the
+// number of distinct observers that have contributed to this edge. Edges
+// corroborated by multiple independent observers outrank edges seen by a single
+// observer at the same raw score. Issue #1229 (Option C).
+func (e *NeighborEdge) Confidence() float64 {
+	n := float64(len(e.Observers))
+	if n < 1 {
+		n = 1
+	}
+	c := n / affinityObserverSaturation
+	if c > 1.0 {
+		c = 1.0
+	}
+	return c
+}
+
 // AvgSNR returns the average SNR, or 0 if no samples.
 func (e *NeighborEdge) AvgSNR() float64 {
 	if e.SNRCount == 0 {
@@ -87,6 +108,25 @@ type NeighborGraph struct {
 	byNode  map[string][]*NeighborEdge // pubkey → edges involving this node
 	builtAt time.Time
 	logFn   func(prefix, msg string) // optional structured logging callback
+
+	// RejectedEdgesGeoFar counts edges dropped at build time because both
+	// endpoints had GPS and their haversine distance exceeded the configured
+	// threshold. Accessed via sync/atomic. See issue #1228.
+	RejectedEdgesGeoFar uint64
+
+	// maxEdgeKm is the geo-sanity threshold copied from config at build time.
+	// 0 means "no limit" / filter disabled.
+	maxEdgeKm float64
+
+	// nodeGeo maps lowercased pubkey → geo info for upsertEdge sanity checks.
+	// Populated by the builder; empty for graphs constructed via NewNeighborGraph.
+	nodeGeo map[string]nodeGeoInfo
+}
+
+// nodeGeoInfo is the minimal geo slice cached on the graph for upsertEdge.
+type nodeGeoInfo struct {
+	Lat, Lon float64
+	HasGPS   bool
 }
 
 // NewNeighborGraph creates an empty graph.
@@ -127,8 +167,18 @@ func (g *NeighborGraph) IsStale() bool {
 // BuildFromStore constructs the neighbor graph from all packets in the store.
 // The store's read-lock must NOT be held by the caller.
 func BuildFromStore(store *PacketStore) *NeighborGraph {
-	return BuildFromStoreWithLog(store, false)
+	return BuildFromStoreWithOptions(store, BuildOptions{MaxEdgeKm: DefaultMaxEdgeKm})
 }
+
+// BuildOptions controls optional behavior of BuildFromStoreWithOptions.
+type BuildOptions struct {
+	EnableLog bool    // structured disambiguation logging
+	MaxEdgeKm float64 // geo-sanity threshold; 0 disables the filter
+}
+
+// DefaultMaxEdgeKm is the conservative built-in cap for the geo-implausibility
+// filter (issue #1228). 500 km is well above any plausible terrestrial LoRa hop.
+const DefaultMaxEdgeKm = 500.0
 
 // cachedToLower returns strings.ToLower(s), caching results to avoid
 // repeated allocations for the same pubkey string.
@@ -142,9 +192,16 @@ func cachedToLower(cache map[string]string, s string) string {
 }
 
 // BuildFromStoreWithLog constructs the neighbor graph, optionally logging disambiguation decisions.
+// Kept for backward compatibility; new callers should use BuildFromStoreWithOptions.
 func BuildFromStoreWithLog(store *PacketStore, enableLog bool) *NeighborGraph {
+	return BuildFromStoreWithOptions(store, BuildOptions{EnableLog: enableLog, MaxEdgeKm: DefaultMaxEdgeKm})
+}
+
+// BuildFromStoreWithOptions constructs the neighbor graph with explicit options.
+func BuildFromStoreWithOptions(store *PacketStore, opts BuildOptions) *NeighborGraph {
 	g := NewNeighborGraph()
-	if enableLog {
+	g.maxEdgeKm = opts.MaxEdgeKm
+	if opts.EnableLog {
 		g.logFn = func(prefix, msg string) {
 			log.Printf("[affinity] resolve %s: %s", prefix, msg)
 		}
@@ -158,7 +215,16 @@ func BuildFromStoreWithLog(store *PacketStore, enableLog bool) *NeighborGraph {
 
 	// Build prefix map for candidate resolution.
 	// Use cached nodes+PM (avoids DB call if cache is fresh).
-	_, pm := store.getCachedNodesAndPM()
+	allNodes, pm := store.getCachedNodesAndPM()
+
+	// Index node geo for upsertEdge geo-sanity checks (issue #1228).
+	geo := make(map[string]nodeGeoInfo, len(allNodes))
+	for _, n := range allNodes {
+		geo[strings.ToLower(n.PublicKey)] = nodeGeoInfo{Lat: n.Lat, Lon: n.Lon, HasGPS: n.HasGPS}
+	}
+	g.mu.Lock()
+	g.nodeGeo = geo
+	g.mu.Unlock()
 
 	// Local cache for strings.ToLower — pubkeys are immutable and repeat
 	// across hundreds of thousands of observations.
@@ -243,6 +309,12 @@ func jsonUnmarshalFast(data string, v interface{}) error {
 
 // upsertEdge adds/updates an edge between two fully-known pubkeys.
 func (g *NeighborGraph) upsertEdge(pubkeyA, pubkeyB, prefix, observer string, snr *float64, ts time.Time) {
+	// Geo-sanity guard (issue #1228): if both endpoints have known GPS and
+	// the haversine distance exceeds the configured threshold, drop the edge.
+	if g.shouldRejectGeoFar(pubkeyA, pubkeyB) {
+		atomic.AddUint64(&g.RejectedEdgesGeoFar, 1)
+		return
+	}
 	key := makeEdgeKey(pubkeyA, pubkeyB)
 
 	g.mu.Lock()
@@ -562,4 +634,35 @@ func (g *NeighborGraph) PruneOlderThan(cutoff time.Time) int {
 		}
 	}
 	return pruned
+}
+
+// shouldRejectGeoFar reports whether the edge (a, b) is geographically
+// implausible under the configured threshold. Both endpoints must have known
+// GPS to trigger a rejection; if either lacks GPS the edge is accepted.
+func (g *NeighborGraph) shouldRejectGeoFar(a, b string) bool {
+	if g == nil || g.maxEdgeKm <= 0 || g.nodeGeo == nil {
+		return false
+	}
+	if strings.HasPrefix(a, "prefix:") || strings.HasPrefix(b, "prefix:") {
+		return false
+	}
+	ga, oka := g.nodeGeo[a]
+	gb, okb := g.nodeGeo[b]
+	if !oka || !okb || !ga.HasGPS || !gb.HasGPS {
+		return false
+	}
+	d := haversineKm(ga.Lat, ga.Lon, gb.Lat, gb.Lon)
+	if d <= g.maxEdgeKm {
+		return false
+	}
+	log.Printf("[neighbor-graph] reject geo-far edge %s↔%s distance=%.0fkm threshold=%.0fkm",
+		piiTruncPubkey(a), piiTruncPubkey(b), d, g.maxEdgeKm)
+	return true
+}
+
+func piiTruncPubkey(pk string) string {
+	if len(pk) <= 8 {
+		return pk
+	}
+	return pk[:8]
 }

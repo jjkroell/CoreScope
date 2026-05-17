@@ -623,3 +623,42 @@ func PruneNeighborEdges(dbPath string, graph *NeighborGraph, maxAgeDays int) (in
 	}
 	return int(dbPruned), nil
 }
+
+// ensureObserverIATAColumn adds the `iata TEXT` column to the observers table
+// if it doesn't already exist. Idempotent — safe to call on every startup.
+// Required by store.go COALESCE(obs.iata, '') queries. Issue #1189.
+func ensureObserverIATAColumn(dbPath string) error {
+	rw, err := openRW(dbPath)
+	if err != nil {
+		return fmt.Errorf("ensureObserverIATAColumn: open rw: %w", err)
+	}
+	defer rw.Close()
+
+	// Check if column already exists
+	rows, err := rw.Query("PRAGMA table_info(observers)")
+	if err != nil {
+		return fmt.Errorf("ensureObserverIATAColumn: pragma: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var colName string
+		var colType sql.NullString
+		var notNull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &colName, &colType, &notNull, &dflt, &pk); err != nil {
+			continue
+		}
+		if colName == "iata" {
+			return nil // already present
+		}
+	}
+	rows.Close()
+
+	_, err = rw.Exec("ALTER TABLE observers ADD COLUMN iata TEXT")
+	if err != nil {
+		return fmt.Errorf("ensureObserverIATAColumn: alter table: %w", err)
+	}
+	log.Printf("[startup] added iata column to observers table")
+	return nil
+}
